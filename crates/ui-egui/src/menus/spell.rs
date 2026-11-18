@@ -5,7 +5,7 @@
 
 use super::tree::{indented_item, separator};
 use super::{FigApp, Tokens, Ui, tr};
-use crate::canvas::outline::TextOnScreen;
+use crate::canvas::TextOnScreen;
 
 /// The largest number of suggestions the menu lists.
 const SUGGESTIONS: usize = 6;

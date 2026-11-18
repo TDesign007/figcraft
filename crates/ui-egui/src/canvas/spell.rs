@@ -5,7 +5,7 @@
 use egui::{Color32, Pos2, Shape, Stroke, vec2};
 
 use super::outline::TextOnScreen;
-use super::{FigApp, NodeKind};
+use super::{Document, FigApp, NodeKind};
 
 /// The underline's colour (a plain red that reads on light and dark pages alike).
 const COLOUR: Color32 = Color32::from_rgb(0xE8, 0x46, 0x46);
@@ -18,12 +18,13 @@ const WIDTH: f32 = 1.0;
 /// The wave's largest sample count (a word's line at an extreme zoom still draws bounded).
 const SAMPLES: usize = 500;
 
-/// Draw the squiggles for the words of the text `te` edits, under their selection rectangles on
-/// `text`'s lines.
-pub(super) fn underlines(app: &FigApp, painter: &egui::Painter, text: &TextOnScreen, te: &figcraft_engine::TextEdit) {
-    let Some(chars) = edited_chars(app, te) else { return };
+/// Draw the squiggles for the words of the text `te` edits (the document its overlay drew, an
+/// IME composition included), under their selection rectangles on `text`'s lines.
+pub(super) fn underlines(app: &FigApp, painter: &egui::Painter, text: &TextOnScreen, edoc: &Document, te: &figcraft_engine::TextEdit) {
+    let Some(n) = edoc.node(te.id) else { return };
+    let NodeKind::Text(t) = &n.kind else { return };
     let added = &app.ui.spell_added;
-    for m in figcraft_text::spell::misspelled(&chars) {
+    for m in figcraft_text::spell::misspelled(&t.characters) {
         if added.contains(&m.word) {
             continue;
         }
@@ -35,15 +36,6 @@ pub(super) fn underlines(app: &FigApp, painter: &egui::Painter, text: &TextOnScr
             squiggle(painter, a, b);
         }
     }
-}
-
-/// The characters of the text being edited (the composition view's, so an IME composition reads
-/// as part of the text while it is being composed).
-fn edited_chars(app: &FigApp, te: &figcraft_engine::TextEdit) -> Option<String> {
-    let doc = app.preedit_view().map(|p| &*p.doc).or_else(|| app.session.ds().ok().map(|d| &*d.doc))?;
-    let n = doc.node(te.id)?;
-    let NodeKind::Text(t) = &n.kind else { return None };
-    Some(t.characters.clone())
 }
 
 /// A zigzag from `a` to `b`, offset below its line so it clears the text's bottom.

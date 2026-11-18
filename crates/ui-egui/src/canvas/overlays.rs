@@ -301,7 +301,7 @@ fn text_edit_overlay(app: &FigApp, painter: &egui::Painter, t: &Tokens, doc: &Do
         painter.line_segment(text.caret(app, caret, zoom), stroke(col, 1.0));
     }
     // Spell check: a squiggle under every word the word list doesn't know (the caret draws over it).
-    super::spell::underlines(app, painter, &text, te);
+    super::spell::underlines(app, painter, &text, edoc, te);
     painter.ctx().request_repaint_after(std::time::Duration::from_millis(500));
 }
 

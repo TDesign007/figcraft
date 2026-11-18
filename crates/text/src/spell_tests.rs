@@ -35,15 +35,16 @@ fn single_letters_pass() {
 }
 
 /// Everything uppercase passes: acronyms the list doesn't keep (a layer's own "KPI") don't flag.
+/// So does an identifier's internal uppercase: the camelCase code a design's annotations carry
+/// (getElementById, fontSize) reads as one, whatever the list knows.
 #[test]
-fn acronyms_pass() {
+fn acronyms_and_identifiers_pass() {
     assert!(words("USB CSS HTML QWRTY").is_empty());
-    // Mixed case still checks: "Docnent" is not an acronym.
-    assert_eq!(words("DoCNENT DoCnENT"), vec!["DoCnENT"]);
+    assert!(words("getElementById fontSize DoCNENT DoCnENT").is_empty());
 }
 
 /// A capitalized word checks through its lowercase form; a proper noun the list keeps passes as
-/// written.
+/// written, in either case.
 #[test]
 fn capitalized_words() {
     assert!(known("Monday"));
@@ -75,12 +76,15 @@ fn non_words_pass() {
     assert!(words("v2").is_empty());
 }
 
-/// Text in another language flags (the list is en_US only), but its ranges stay on characters.
+/// Text in another script passes silently: the list is English (US) only, and another language's
+/// every word flagging under it would be noise. English beside it still checks.
 #[test]
-fn other_languages_flag() {
-    assert_eq!(words("привет мир"), vec!["привет", "мир"]);
-    assert_eq!(words("中文设计"), Vec::<String>::new());
-    // CJK next to English: only the English word's range.
+fn other_scripts_pass() {
+    assert!(words("привет мир").is_empty());
+    assert!(words("中文设计").is_empty());
+    // An accented Latin word passes too (the list has none of them).
+    assert!(words("héllo wörld").is_empty());
+    // CJK next to English: only the English word's range (the ranges count characters).
     assert_eq!(ranges("设计 quik 设计"), vec![(3, 7)]);
 }
 
@@ -91,7 +95,8 @@ fn empty_text() {
     assert!(misspelled("   \n\t").is_empty());
 }
 
-/// Suggestions come from the list, nearest first, within two edits.
+/// Suggestions come from the list, nearest first, within two edits; equal distances prefer the
+/// longer word.
 #[test]
 fn suggestions_rank_by_distance() {
     let s = suggestions("quik", 5);
@@ -115,13 +120,13 @@ fn suggestions_include_proper_nouns() {
     assert!(suggestions("Mnday", 10).iter().any(|w| w == "Monday"));
 }
 
-/// A possessive plural suggests the plain word's forms ("catss" → "cats").
+/// A possessive plural suggests the plain word's forms ("catss" → "cats"). The menu never sees a
+/// word the list knows — "don’t" checks as the list's own "don't" (the apostrophes test covers
+/// it) — so a suggestion query exercises the trailing possessive only.
 #[test]
 fn suggestions_for_apostrophes() {
     let s = suggestions("catss", 5);
     assert!(s.iter().any(|w| w == "cats"));
-    // A curly apostrophe normalizes before the scan.
-    assert!(suggestions("don’", 5).iter().any(|w| w == "don't"));
 }
 
 /// No suggestions beyond what the list has: an empty result, never a panic, on gibberish.

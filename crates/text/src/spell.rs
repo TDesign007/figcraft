@@ -31,19 +31,28 @@ pub struct Misspelled {
     pub word: String,
 }
 
-/// Is `word` in the list? A capitalized word also passes through its lowercase form ("Monday"
-/// typed at the start of a sentence), so only words the list knows in neither case flag.
+/// Is `word` in the list? Both sides of case pass through each other: a capitalized word checks
+/// through its lowercase form ("Monday" typed mid-sentence), and a lowercase one through the
+/// list's capitalized proper nouns ("monday" typed at the start of a sentence).
 pub fn known(word: &str) -> bool {
     let list = words();
     if list.contains(word) {
         return true;
     }
-    // A word with no uppercase had its one chance: the list keeps its words as written.
-    if !word.chars().any(|c| c.is_uppercase()) {
-        return false;
+    if word.chars().any(|c| c.is_uppercase()) {
+        let lower = word.to_lowercase();
+        if list.contains(lower.as_str()) {
+            return true;
+        }
     }
-    let lower = word.to_lowercase();
-    list.contains(lower.as_str())
+    let mut chars = word.chars();
+    match chars.next() {
+        Some(c) if c.is_lowercase() => {
+            let cap = c.to_uppercase().collect::<String>() + chars.as_str();
+            list.contains(cap.as_str())
+        }
+        _ => false,
+    }
 }
 
 /// The words of `text` the list doesn't know, in order: every maximal run of letters and word
@@ -53,18 +62,20 @@ pub fn misspelled(text: &str) -> Vec<Misspelled> {
     let mut out = Vec::new();
     let mut start = None;
     let mut index = 0usize;
+    let mut start_byte = 0usize;
     for (i, c) in text.char_indices() {
         if is_word_char(c) {
             if start.is_none() {
                 start = Some(index);
+                start_byte = i;
             }
         } else if let Some(from) = start.take() {
-            check_word(text, from, index, &mut out);
+            check_word(text, from, index, start_byte, i, &mut out);
         }
         index += 1;
     }
     if let Some(from) = start {
-        check_word(text, from, index, &mut out);
+        check_word(text, from, index, start_byte, text.len(), &mut out);
     }
     out
 }
@@ -75,9 +86,10 @@ fn is_word_char(c: char) -> bool {
     c.is_alphabetic() || c == '\'' || c == '’'
 }
 
-/// Look up the word at char range `from..to` and, unknown, push it onto `out`.
-fn check_word(text: &str, from: usize, to: usize, out: &mut Vec<Misspelled>) {
-    let Some(slice) = slice_chars(text, from, to) else { return };
+/// Look up the word at char range `from..to` (its bytes `from_byte..to_byte`) and, unknown, push
+/// it onto `out`.
+fn check_word(text: &str, from: usize, to: usize, from_byte: usize, to_byte: usize, out: &mut Vec<Misspelled>) {
+    let Some(slice) = text.get(from_byte..to_byte) else { return };
     let normalized = slice.replace('’', "'");
     // A possessive plural checks as its plain form; a quote before a word isn't part of it. The
     // underline's range is trimmed to match, so it covers the word's letters only.
@@ -92,8 +104,14 @@ fn check_word(text: &str, from: usize, to: usize, out: &mut Vec<Misspelled>) {
     if word.chars().count() < 2 {
         return;
     }
-    // An acronym reads as one: USB, CSS. Everything uppercase passes, whatever the list knows.
-    if word.chars().all(|c| !c.is_alphabetic() || c.is_uppercase()) {
+    // Words with letters outside ASCII pass: the list is English (US) only, and another script's
+    // words flagging under it (Russian, Arabic, CJK) would be noise, as would accented borrowings.
+    if !word.chars().all(|c| c.is_ascii_alphabetic() || c == '\'') {
+        return;
+    }
+    // An identifier or acronym reads as one and passes: USB, DON'T, and the camelCase code a
+    // design's annotations carry (getElementById, fontSize); only a uniformly cased word checks.
+    if word[1..].chars().any(|c| c.is_uppercase()) {
         return;
     }
     if known(&word) {
@@ -102,22 +120,18 @@ fn check_word(text: &str, from: usize, to: usize, out: &mut Vec<Misspelled>) {
     out.push(Misspelled { range: (from + lead, to - trail), word });
 }
 
-/// The characters `from..to` of `text` (a char range from the scanner is always on boundaries).
-fn slice_chars(text: &str, from: usize, to: usize) -> Option<&str> {
-    let start = text.char_indices().nth(from)?.0;
-    let end = text.char_indices().nth(to).map(|(i, _)| i).unwrap_or(text.len());
-    text.get(start..end)
-}
-
-/// The list's nearest words to `word`, best first: edit distance 2 at most, ties broken by length
-/// closeness, then alphabetically. A capitalized word gets capitalized suggestions ("Helo" at the
-/// start of a sentence suggests "Hello"). Proper nouns come along ("Mnday" suggests "Monday").
+/// The list's nearest words to `word`, best first: edit distance 2 at most, ties preferring the
+/// longer word, then alphabetically, compared case-insensitively. A capitalized word gets
+/// capitalized suggestions ("Helo" at the start of a sentence suggests "Hello"), and proper nouns
+/// come along in their own ("Mnday" suggests "Monday").
 pub fn suggestions(word: &str, max: usize) -> Vec<String> {
     let target = word.replace('’', "'").trim_matches('\'').to_lowercase();
     if target.is_empty() || max == 0 {
         return Vec::new();
     }
     let len = target.chars().count();
+    // The distance compares case-insensitively (a proper noun's capital must not count against
+    // it); the list's word as written comes back, so "Mnday" suggests "Monday" in its own case.
     let mut scored: Vec<(usize, usize, String)> = words()
         .iter()
         .filter(|w| {
@@ -125,12 +139,15 @@ pub fn suggestions(word: &str, max: usize) -> Vec<String> {
             l + 2 >= len && l <= len + 2
         })
         .filter_map(|w| {
-            let d = edit_distance(&target, w, 2)?;
-            let l = w.chars().count();
-            Some((d, l.abs_diff(len), (*w).to_string()))
+            let lower = w.to_lowercase();
+            let d = edit_distance(&target, &lower, 2)?;
+            let l = lower.chars().count();
+            Some((d, l, (*w).to_string()))
         })
         .collect();
-    scored.sort();
+    // Distance first; equal distances prefer the longer word (the typo is more often a missing
+    // letter than a stray one: "quik" reads as "quick", "Helo" as "Hello"); then alphabetical.
+    scored.sort_by(|a, b| a.0.cmp(&b.0).then(b.1.cmp(&a.1)).then(a.2.cmp(&b.2)));
     let capitalized = word.chars().next().is_some_and(|c| c.is_uppercase());
     scored
         .into_iter()
