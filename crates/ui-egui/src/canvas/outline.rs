@@ -51,6 +51,13 @@ impl TextOnScreen {
             }
         }
     }
+
+    /// The layout coordinates of page point `p` (the inverse of [`TextOnScreen::at`] without the
+    /// warp of text on a path, where a caller falls back to the caret instead).
+    pub(crate) fn layout_at(&self, p: Point) -> (f64, f64) {
+        let q = self.world.inverse() * p;
+        (q.x, q.y - self.dy)
+    }
 }
 
 /// A node's oriented outline in screen space.

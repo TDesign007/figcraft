@@ -496,6 +496,9 @@ pub struct UiState {
     pub title_bar: TitleBar,
     /// Every icon on one screen, for reviewing the set (control channel `ui.set {iconGallery}`).
     pub icon_gallery: bool,
+    /// Words the spelling menu's "Add to dictionary" added this session: they pass the spell
+    /// check of the text being edited (not saved with the file).
+    pub spell_added: BTreeSet<String>,
     /// A message at the bottom of the window and how long it has been showing.
     pub toast: Option<(String, ToastClock)>,
     pub present: Option<present::Presenter>,
@@ -700,6 +703,7 @@ impl Default for UiState {
             home_view: home::Home::default(),
             title_bar: TitleBar::Native,
             icon_gallery: false,
+            spell_added: BTreeSet::new(),
             toast: None,
             present: None,
             presents: Vec::new(),

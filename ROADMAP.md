@@ -365,6 +365,7 @@ Ranked; detail and milestones in [`docs/roadmap.md`](docs/roadmap.md).
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-11-19 | minor | Spell check (gap 11): the editor underlines unknown English (US) words while a text layer is edited and the context menu suggests the list's nearest words, replacing the word on pick; "Add to dictionary" passes a word for the session. The checker is the embedded hunspell en_US word list (SCOWL, MIT; `crates/text/assets/spell_en_us.txt`, 107,441 forms). Tests: `crates/text/src/spell_tests.rs` (16). Numbers unchanged |
 | 2026-11-17 | minor | M6: Android Vector Drawable XML serialization uses the shared writer; application projection and colour policy remain local. Byte-parity tests cover full documents and generated deep wrappers; no new format capability or incumbent certification. |
 | 2026-11-15 | patch | CLI usage and operation failures escape terminal controls in paths and error text, using the same printable-text rule as info and script diagnostics; exit codes and ordinary quotes and paths stay unchanged. |
 | 2026-11-10 | minor | M4, #2222: a boolean group takes a corner radius that rounds every sharp corner of its result. Numbers unchanged |

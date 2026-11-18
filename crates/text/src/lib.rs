@@ -12,6 +12,7 @@ pub mod display;
 pub mod fontdb;
 mod layout;
 mod onpath;
+pub mod spell;
 
 pub use breaks::{backspace_step, grapheme_step};
 pub use color::{ColorBitmap, ColorInk, ColorLayer};
@@ -22,6 +23,7 @@ pub use fontdb::{
 };
 pub use layout::{Decoration, Glyph, Line, TextLayout, layout};
 pub use onpath::OnPath;
+pub use spell::{Misspelled, misspelled, suggestions};
 
 use figcraft_doc::{Node, NodeKind, TextAlignV, TextAutoResize};
 
@@ -164,6 +166,8 @@ mod onpath_tests;
 mod rtl_list_tests;
 #[cfg(test)]
 mod saved_breaks_tests;
+#[cfg(test)]
+mod spell_tests;
 #[cfg(test)]
 mod tail_tests;
 #[cfg(test)]

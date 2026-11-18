@@ -21,6 +21,7 @@ mod outline;
 mod overlays;
 mod render;
 mod rulers;
+mod spell;
 
 #[cfg(test)]
 use builder::clean_poly;

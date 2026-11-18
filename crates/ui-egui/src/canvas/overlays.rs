@@ -300,6 +300,8 @@ fn text_edit_overlay(app: &FigApp, painter: &egui::Painter, t: &Tokens, doc: &Do
         let col = edoc.node(te.id).and_then(|n| caret_color(painter.ctx(), n, caret)).unwrap_or_else(|| caret_fallback(edoc, te.id));
         painter.line_segment(text.caret(app, caret, zoom), stroke(col, 1.0));
     }
+    // Spell check: a squiggle under every word the word list doesn't know (the caret draws over it).
+    super::spell::underlines(app, painter, &text, te);
     painter.ctx().request_repaint_after(std::time::Duration::from_millis(500));
 }
 

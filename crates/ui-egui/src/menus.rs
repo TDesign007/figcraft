@@ -15,6 +15,7 @@ use crate::toolbar::pretty_shortcut;
 mod clipboard;
 mod palette;
 mod select_layer;
+mod spell;
 mod tree;
 
 pub use clipboard::paste;
@@ -458,6 +459,11 @@ pub fn popups(app: &mut FigApp, ctx: &egui::Context) {
         let mut close = false;
         let area = egui::Area::new(ctx_menu_id()).fixed_pos(pos).order(egui::Order::Foreground).constrain(true).show(ctx, |ui| {
             menu_frame(ui, &t, At { root: ctx_menu_id(), path: String::new() }, |ui| {
+                // While a text layer is being edited, the spelling section comes first: the
+                // suggestions for the word under the pointer, and adding it to the session's list.
+                if spell::spell_menu(app, ui, pos, &t) {
+                    close = true;
+                }
                 if select_layer_menu(app, ui, pos, &t) {
                     close = true;
                 }

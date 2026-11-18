@@ -24,7 +24,7 @@ No alpha blockers: the alpha gate in [`roadmap.md`](roadmap.md#alpha-gate) passe
 | 8 | Platform QA: Linux and the browser left (Windows pass done 2026-10-11) | Stability/platforms | 10–20 | [hardware-parity](hardware-parity.md) |
 | 9 | Figma Draw: pen pressure on macOS/Linux tablets (multi-edit, brushes, pressure, text on a path and pattern fills landed) | Feature | 1–3 | [target-app-parity](target-app-parity.md) |
 | 10 | Team libraries: no team-wide lists or accounts; analytics count insertions for components only | Feature | 4–8 | [components-parity](components-parity.md) |
-| 11 | Spell check | Feature | 4–8 | [target-app-parity](target-app-parity.md) |
+| 11 | Spell check: other languages' lists and a language picker, added words kept between sessions, checking without the layer being edited (underlines and suggestions while editing text landed 2026-11-19) | Feature | 4–8 | [target-app-parity](target-app-parity.md) |
 | 12 | Video fills; HEIC images | File format | 5–10 | [file-format-parity](file-format-parity.md) |
 | 13 | Vector tail: none left (boolean hit testing on the result landed 2026-10-11) | Feature | — | [target-app-parity](target-app-parity.md) |
 | 14 | Variables: extended collections checked on real libraries (the tail landed 2026-10-12) | Feature | 0–1 | [components-parity](components-parity.md) |
@@ -391,10 +391,25 @@ No alpha blockers: the alpha gate in [`roadmap.md`](roadmap.md#alpha-gate) passe
 - **Estimate:** 4–8 h, the accounts part after gap 2.
 
 ### 11. Spell check
-- **Missing:** spelling underline and suggestions while editing text.
-- **Evidence:** no spell-check code in the repo.
-- **Estimate:** 4–8 h with a permissively licensed dictionary and checker (provenance per
-  `ATTRIBUTION.md`).
+- **Landed (2026-11-19):** spelling underline and suggestions while editing text. While a text
+  layer is edited, every word the embedded en_US word list doesn't know draws a red squiggle under
+  it (single letters, acronyms and words added to the session's list pass; a capitalized word
+  checks through its lowercase form; the list keeps proper nouns). Right-clicking while editing
+  opens the context menu's spelling section: up to six suggestions for the word under the pointer
+  (the caret's own when the pointer is off the text, and on text laid out on a path), replacing
+  the word on pick with the edit continuing, and "Add to dictionary" passes the word for the
+  session (not saved with the file). The checker is a plain word list: the hunspell en_US
+  dictionary (SCOWL up to size 60, MIT/BSD per the release's README, provenance in
+  `ATTRIBUTION.md`) expanded to its inflected forms by the checked-in generator
+  (`crates/text/assets/spell_en_us.txt`, 107,441 forms) and looked up in a set; suggestions are
+  the list's nearest words by edit distance (2 at most, ties by length then alphabet),
+  capitalized with the word they fix. Suggestions are computed when the menu opens; the underline
+  scan is per-word membership, cheap enough for every frame. English (US) only: words in any
+  other language flag while their text is edited, as a system checker set to English would.
+  Evidence: `crates/text/src/spell.rs`, `crates/text/src/spell_tests.rs`,
+  `crates/ui-egui/src/canvas/spell.rs`, `crates/ui-egui/src/menus/spell.rs`.
+- **Missing:** other languages' lists and a language picker (the checker checks against en_US
+  only), keeping the added words between sessions, checking without the layer being edited.
 
 ### 12. Video fills; HEIC images
 - **Landed (2026-10-11):** animated GIF fills (the file kept as is, the first frame on the canvas
