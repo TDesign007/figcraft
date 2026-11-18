@@ -59,16 +59,23 @@ fn spelling(app: &FigApp, pos: egui::Pos2) -> Option<((usize, usize), String, Ve
     let figcraft_doc::NodeKind::Text(td) = &n.kind else { return None };
     let text = TextOnScreen::of(&doc, te.id)?;
     // The word the pointer is on (a right-click moves nothing, so the caret stays where it was);
-    // on a path the pointer's inverse mapping doesn't hold, so the caret's word stands in.
-    let index = if text.layout.on_path.is_some() {
+    // when the pointer is off the text's box, or the text is laid out on a path (where the
+    // pointer's inverse mapping doesn't hold), the caret's own word stands in.
+    let page = app.to_page(pos);
+    let on_box = text.box_contains(page, n.width, n.height);
+    let index = if text.layout.on_path.is_some() || !on_box {
         te.caret
     } else {
-        let (x, y) = text.layout_at(app.to_page(pos));
+        let (x, y) = text.layout_at(page);
         text.layout.hit(x, y)
     };
     let list = figcraft_text::spell::misspelled(&td.characters);
     // The word under the index, or one ending there (the caret sits just after its last letter).
     let m = list.into_iter().find(|m| (m.range.0..m.range.1).contains(&index) || m.range.1 == index)?;
+    // A word the session added ("Add to dictionary") passes the check everywhere: no section.
+    if app.ui.spell_added.contains(&m.word) {
+        return None;
+    }
     let sugs = figcraft_text::spell::suggestions(&m.word, SUGGESTIONS);
     Some((m.range, m.word, sugs))
 }

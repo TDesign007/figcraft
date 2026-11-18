@@ -266,6 +266,8 @@ mod shortcut_keys_tests;
 #[cfg(test)]
 mod shortcuts_tests;
 #[cfg(test)]
+mod spell_menu_tests;
+#[cfg(test)]
 mod stroke_row_tests;
 #[cfg(test)]
 mod style_folder_rename_tests;

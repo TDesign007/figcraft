@@ -58,6 +58,12 @@ impl TextOnScreen {
         let q = self.world.inverse() * p;
         (q.x, q.y - self.dy)
     }
+
+    /// Is page point `p` inside the text's box (`w` × `h` in the text's own space)?
+    pub(crate) fn box_contains(&self, p: Point, w: f64, h: f64) -> bool {
+        let q = self.world.inverse() * p;
+        q.x >= 0.0 && q.x <= w && q.y >= 0.0 && q.y <= h
+    }
 }
 
 /// A node's oriented outline in screen space.
