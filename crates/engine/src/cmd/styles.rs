@@ -1394,6 +1394,8 @@ pub(crate) fn set_effect_field(effects: &mut [Effect], i: usize, prop: &str, val
         (EffectKind::Transform3d(t), "rotateY", Some(x), _) => t.rotate_y = x.clamp(-360.0, 360.0),
         (EffectKind::Transform3d(t), "rotateZ", Some(x), _) => t.rotate_z = x.clamp(-360.0, 360.0),
         (EffectKind::Transform3d(t), "depth", Some(x), _) => t.depth = x.clamp(-10_000.0, 10_000.0),
+        (EffectKind::Transform3d(t), "originX", Some(x), _) => t.origin.0 = x.clamp(0.0, 100.0),
+        (EffectKind::Transform3d(t), "originY", Some(x), _) => t.origin.1 = x.clamp(0.0, 100.0),
         (EffectKind::Perspective(p), "distance", Some(x), _) => p.distance = x.clamp(1.0, 100_000.0),
         _ => {}
     }

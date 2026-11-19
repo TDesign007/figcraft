@@ -503,6 +503,8 @@ pub struct UiState {
     pub t3_popover: Option<(NodeId, usize, egui::Rect)>,
     /// The popover has drawn at least once (its opening frame's press is spared).
     pub t3_popover_shown: bool,
+    /// The 3D transform popover's pivot picker (the nine points) is open.
+    pub t3_origin_open: bool,
     /// The popover's preview texture (the cube), keyed by the raster that built it.
     pub t3_preview: Option<((u64, u32, u32), egui::TextureHandle)>,
     /// The 3D transform's popover chrome (its placement and size, kept between frames).
@@ -713,6 +715,7 @@ impl Default for UiState {
             icon_gallery: false,
             t3_popover: None,
             t3_popover_shown: false,
+            t3_origin_open: false,
             t3_preview: None,
             t3_popover_pop: None,
             toast: None,

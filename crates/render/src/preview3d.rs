@@ -26,7 +26,7 @@ pub fn cube(doc: &Document, id: NodeId, size: (u32, u32)) -> Option<Pixmap> {
         return None;
     }
     let (w, h) = (n.width.max(1.0), n.height.max(1.0));
-    let pivot = (w / 2.0, h / 2.0);
+    let pivot = t3.pivot(w, h);
     // The thickness: the effect's own depth, at least the illustrative minimum (signed the same
     // way, so a negative depth's body reaches forward).
     let thickness = if t3.depth < 0.0 { -(-t3.depth).max(MIN_THICKNESS) } else { t3.depth.max(MIN_THICKNESS) };

@@ -90,8 +90,7 @@ pub fn perspective_of(doc: &Document, id: crate::NodeId) -> Option<f64> {
 pub fn node_homography(doc: &Document, id: crate::NodeId) -> Option<Homography> {
     let n = doc.node(id)?;
     let t3 = of(n)?;
-    let pivot = (n.width / 2.0, n.height / 2.0);
-    let plane = plane_homography(&t3, pivot, perspective_of(doc, id));
+    let plane = plane_homography(&t3, t3.pivot(n.width, n.height), perspective_of(doc, id));
     Some(Homography::from_affine(doc.world_transform(id)).mul(plane))
 }
 
@@ -103,13 +102,81 @@ pub fn unwarped(doc: &Document, id: crate::NodeId, pt: Point) -> Option<Point> {
     let n = doc.node(id)?;
     let t3 = of(n)?;
     let world = doc.world_transform(id);
-    let pivot = (n.width / 2.0, n.height / 2.0);
+    let pivot = t3.pivot(n.width, n.height);
     let hp = plane_homography(&t3, pivot, perspective_of(doc, id));
     let inv = hp.inverse()?;
     // Into the layer's own coordinates, out of the turn, back onto the un-turned placement.
     let local = world.inverse() * pt;
     let (x, y) = inv.apply(local.x, local.y);
     (x.is_finite() && y.is_finite()).then_some(world * Point::new(x, y))
+}
+
+/// The layer's 3D → page projector: any point of the layer's own space (x, y in the plane, z
+/// out of it, both in px about the pivot) through the turns, the depth and the camera, for the
+/// gizmo's rings and anything else that lives off the flat plane.
+#[derive(Clone, Copy, Debug)]
+pub struct Projector {
+    world: Affine,
+    pivot: (f64, f64),
+    depth: f64,
+    d: Option<f64>,
+    cx: f64,
+    sx: f64,
+    cy: f64,
+    sy: f64,
+    cz: f64,
+    sz: f64,
+}
+
+impl Projector {
+    /// The page point of the layer-space point `(x, y, z)`.
+    pub fn apply(&self, x: f64, y: f64, z: f64) -> (f64, f64) {
+        let (px, py) = self.pivot;
+        // The plane out of the pivot, spun in itself first (as CSS's rotateZ), then turned.
+        let (x0, y0) = ((x - px) * self.cz - (y - py) * self.sz, (x - px) * self.sz + (y - py) * self.cz);
+        let x1 = x0 * self.cy;
+        let z1 = -x0 * self.sy;
+        let y1 = y0;
+        let y2 = y1 * self.cx - z1 * self.sx;
+        let z2 = y1 * self.sx + z1 * self.cx;
+        let z3 = z2 + z + self.depth;
+        // The camera's divide (orthographic without one).
+        let (x, y) = match self.d {
+            Some(d) if d > 0.0 && (d - z3).abs() > 1e-9 => {
+                let k = d / (d - z3);
+                (x1 * k + px, y2 * k + py)
+            }
+            _ => (x1 + px, y2 + py),
+        };
+        let q = self.world * Point::new(x, y);
+        (q.x, q.y)
+    }
+
+    /// The pivot in the layer's own coordinates.
+    pub fn pivot(&self) -> (f64, f64) {
+        self.pivot
+    }
+
+    /// The pivot in page coordinates (the gizmo's centre).
+    pub fn pivot_page(&self) -> (f64, f64) {
+        let q = self.apply(self.pivot.0, self.pivot.1, 0.0);
+        (q.0, q.1)
+    }
+
+    /// The pivot's distance from a point of the layer, in the layer's own px.
+    pub fn radius(&self, w: f64, h: f64) -> f64 {
+        ((self.pivot.0.abs() + (w - self.pivot.0).abs()).max(self.pivot.1.abs() + (h - self.pivot.1).abs())) * 0.45
+    }
+}
+
+/// The projector of layer `id`'s visible 3D transform (`None`: none).
+pub fn projector(doc: &Document, id: crate::NodeId) -> Option<Projector> {
+    let n = doc.node(id)?;
+    let t3 = of(n)?;
+    let (cx, sx) = (t3.rotate_x.to_radians().cos(), t3.rotate_x.to_radians().sin());
+    let (cy, sy) = (t3.rotate_y.to_radians().cos(), t3.rotate_y.to_radians().sin());
+    let (cz, sz) = (t3.rotate_z.to_radians().cos(), t3.rotate_z.to_radians().sin());
+    Some(Projector { world: doc.world_transform(id), pivot: t3.pivot(n.width, n.height), depth: t3.depth, d: perspective_of(doc, id), cx, sx, cy, sy, cz, sz })
 }
 
 /// The layer's projected corners in page coordinates (its local box through the homography),
@@ -178,7 +245,7 @@ mod tests {
     /// A point maps back to itself through the turn and its inverse.
     #[test]
     fn plane_round_trips_through_the_inverse() {
-        let t3 = Transform3d { rotate_x: 30.0, rotate_y: 20.0, rotate_z: 0.0, depth: 50.0, backface: true };
+        let t3 = Transform3d { rotate_x: 30.0, rotate_y: 20.0, rotate_z: 0.0, depth: 50.0, origin: (50.0, 50.0), backface: true };
         let h = plane_homography(&t3, (50.0, 50.0), Some(800.0));
         let inv = h.inverse().unwrap();
         for (x, y) in [(0.0, 0.0), (100.0, 0.0), (50.0, 50.0), (13.0, 87.0)] {

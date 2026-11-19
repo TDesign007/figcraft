@@ -81,22 +81,27 @@ pub(crate) fn popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId, i: usiz
     pop = pop.close_on_outside(true);
     let closed = pop.show(ctx, crate::popover::Open::At(at), crate::popover::Hold { rects: std::slice::from_ref(&held), escape: false }, |ui| {
                     ui.set_width(WIDTH - 16.0);
-                    // The header: the effect's mark and name, the layer's name, the close.
-                    row(ui, 34.0, |ui| {
+                    // The header: the effect's mark, the layer's name, the pivot picker (⊕), the
+                    // close (the Popover's own header carries the title and the X).
+                    row(ui, 30.0, |ui| {
                         cube_icon(ui, t);
-                        ui.add_space(6.0);
-                        let title = ui.painter().layout_no_wrap(tr("3D transform").to_string(), regular(12.0), t.menu_text.clone());
-                        let title_rect = Rect::from_min_size(ui.cursor().min, title.mesh_bounds.size());
-                        ui.painter().galley(title_rect.min, title, t.menu_text);
-                        ui.advance_cursor_after_rect(title_rect);
                         ui.add_space(6.0);
                         name_pill(ui, t, &name);
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if icons::button(ui, Icon::Close, 24.0, false, tr("Close")).clicked() {
                                 app.ui.t3_popover = None;
                             }
+                            // The pivot picker: nine preset points, the fields for a precise one.
+                            if icons::button(ui, Icon::Effects, 24.0, app.ui.t3_origin_open, tr("Rotation point")).clicked() {
+                                app.ui.t3_origin_open = !app.ui.t3_origin_open;
+                            }
                         });
                     });
+                    // The pivot picker's panel: the nine points on the layer, the precise X/Y.
+                    if app.ui.t3_origin_open {
+                        origin_panel(app, ui, &ids, i, t, &t3);
+                        ui.add_space(4.0);
+                    }
                     ui.add_space(2.0);
                     // The preview: the turned slab, dragged to turn it in real time, with a reset.
                     let (_, prect) = ui.allocate_space(vec2(WIDTH - 20.0, PREVIEW_H));
@@ -211,6 +216,94 @@ fn label_at(ui: &mut egui::Ui, t: &Tokens, label: &str, inset: f32) {
     let galley = ui.painter().layout_no_wrap(label.to_string(), regular(12.0), t.menu_text);
     let cy = ui.cursor().center().y - galley.size().y / 2.0;
     ui.painter().galley(pos2(ui.cursor().min.x + inset, cy), galley, t.menu_text);
+}
+
+/// The pivot picker's panel: a 3 × 3 grid of points on the layer (the corners, the edge
+/// midpoints, the centre), the centre picked by default, and the precise X/Y in the layer's
+/// percent. A click on a point (or a field edit) moves the turn's pivot through `effect.set`.
+fn origin_panel(app: &mut FigApp, ui: &mut egui::Ui, ids: &[NodeId], i: usize, t: &Tokens, t3: &Transform3d) {
+    let panel_w = WIDTH - 20.0;
+    let grid_h = 96.0;
+    let (rect, resp) = ui.allocate_exact_size(vec2(panel_w, grid_h), Sense::click());
+    ui.painter().rect_filled(rect, CornerRadius::same(8), t.panel);
+    // The nine points, the picked one a blue rounded square (the centre by default).
+    let origin = t3.sanitized().origin;
+    let picked = |col: usize, row: usize| ((col * 50) as f64 - origin.0).abs() < 1.0 && ((row * 50) as f64 - origin.1).abs() < 1.0;
+    let mut picked_cell: Option<(usize, usize)> = None;
+    for row in 0..3 {
+        for col in 0..3 {
+            let cx = rect.min.x + 24.0 + (rect.width() - 48.0) * (col as f32 / 2.0);
+            let cy = rect.min.y + 18.0 + (rect.height() - 36.0) * (row as f32 / 2.0);
+            if picked(col, row) {
+                picked_cell = Some((col, row));
+                let sq = Rect::from_center_size(pos2(cx, cy), vec2(14.0, 14.0));
+                ui.painter().rect_filled(sq, CornerRadius::same(4), Color32::from_rgb(0x0D, 0x99, 0xFF));
+            } else {
+                ui.painter().circle_filled(pos2(cx, cy), 2.5, t.icon_secondary);
+            }
+        }
+    }
+    // A click picks the cell under the pointer.
+    if resp.clicked()
+        && let Some(at) = resp.hover_pos()
+    {
+        let col = (((at.x - rect.min.x - 24.0) / (rect.width() - 48.0).max(1.0)) * 2.0).round().clamp(0.0, 2.0) as usize;
+        let row_i = (((at.y - rect.min.y - 18.0) / (rect.height() - 36.0).max(1.0)) * 2.0).round().clamp(0.0, 2.0) as usize;
+        if Some((col, row_i)) != picked_cell {
+            let e2 = tweaked_effect(e_of_ids(app, ids, i), |t2: &mut Transform3d| t2.origin = ((col * 50) as f64, (row_i * 50) as f64));
+            t3_set(app, ids, i, e2, None);
+        }
+    }
+    // The precise origin, in the layer's percent.
+    let half = (panel_w - 12.0) / 2.0;
+    let e_now = e_of_ids(app, ids, i);
+    row(ui, 30.0, |ui| {
+        let ed = t3_field(app, ui, ids, i, "originX", crate::widgets::Lead::Text("X"), Some(origin.0), "%", half);
+        if let Some(ed) = ed {
+            match ed {
+                crate::widgets::FieldEdit::Set(v) => t3_set(app, ids, i, tweaked_effect(e_now.clone(), |t2: &mut Transform3d| t2.origin.0 = v.clamp(0.0, 100.0)), None),
+                crate::widgets::FieldEdit::Scrub(v, done) => t3_set(app, ids, i, tweaked_effect(e_now.clone(), |t2: &mut Transform3d| t2.origin.0 = v.clamp(0.0, 100.0)), Some(done)),
+            }
+        }
+        let ed = t3_field(app, ui, ids, i, "originY", crate::widgets::Lead::Text("Y"), Some(origin.1), "%", half);
+        if let Some(ed) = ed {
+            match ed {
+                crate::widgets::FieldEdit::Set(v) => t3_set(app, ids, i, tweaked_effect(e_now.clone(), |t2: &mut Transform3d| t2.origin.1 = v.clamp(0.0, 100.0)), None),
+                crate::widgets::FieldEdit::Scrub(v, done) => t3_set(app, ids, i, tweaked_effect(e_now.clone(), |t2: &mut Transform3d| t2.origin.1 = v.clamp(0.0, 100.0)), Some(done)),
+            }
+        }
+    });
+}
+
+/// The effect of row `i` on layer `id` (the popover's own edits read it fresh each frame).
+fn e_of_ids(app: &FigApp, ids: &[NodeId], i: usize) -> Effect {
+    app.session.doc().ok().and_then(|doc| doc.node(ids[0])).and_then(|n| n.effects.get(i).cloned()).unwrap_or_else(|| Effect::transform3d())
+}
+
+/// `effect.set` for the popover's effect (one command, or a gesture's batched frames).
+fn t3_set(app: &mut FigApp, ids: &[NodeId], i: usize, e2: Effect, scrub: Option<bool>) {
+    let p = json!({"ids": ids, "index": i, "effect": e2});
+    match scrub {
+        None => {
+            app.run("effect.set", p);
+        }
+        Some(done) => {
+            let _ = app.session.begin_interaction("3D transform");
+            let _ = app.session.execute("effect.set", &p);
+            if done {
+                let _ = app.session.commit_interaction();
+            }
+        }
+    }
+}
+
+/// `e` with `f` applied to its kind.
+fn tweaked_effect(e: Effect, f: impl FnOnce(&mut Transform3d)) -> Effect {
+    let mut e2 = e;
+    if let EffectKind::Transform3d(t2) = &mut e2.kind {
+        f(t2);
+    }
+    e2
 }
 
 /// A small isometric-ish cube, the header's mark.

@@ -38,6 +38,7 @@ pub mod comments;
 pub mod cursors;
 pub mod frame_labels;
 pub mod frame_stats;
+pub mod gizmo;
 pub mod guides;
 pub mod handles;
 pub mod live_text;
@@ -49,6 +50,9 @@ pub mod widget_bar;
 
 pub struct CanvasState {
     pub rect: Rect,
+    /// The grabbed 3D gizmo ring: the layer, the axis (0: X, 1: Y, 2: Z), the pointer's start
+    /// angle at the pivot and the turn's start value.
+    pub t3_gizmo: Option<(NodeId, usize, f64, f64)>,
     texture: Option<egui::TextureHandle>,
     tex_view: Option<figcraft_render::View>,
     /// The file ([`figcraft_engine::DocState::uid`]) and page the texture shows: it is drawn only
@@ -102,6 +106,7 @@ pub struct CanvasState {
 impl Default for CanvasState {
     fn default() -> Self {
         Self {
+            t3_gizmo: None,
             rect: Rect::NOTHING,
             texture: None,
             tex_view: None,

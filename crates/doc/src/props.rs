@@ -856,13 +856,21 @@ pub struct Transform3d {
     pub rotate_z: f64,
     #[serde(default)]
     pub depth: f64,
+    /// The turn's pivot, in the layer's own percent across and down (50/50: the centre; Figma's
+    /// rotation point).
+    #[serde(default = "default_origin")]
+    pub origin: (f64, f64),
     #[serde(default = "yes")]
     pub backface: bool,
 }
 
+fn default_origin() -> (f64, f64) {
+    (50.0, 50.0)
+}
+
 impl Default for Transform3d {
     fn default() -> Self {
-        Self { rotate_x: 0.0, rotate_y: 0.0, rotate_z: 0.0, depth: 0.0, backface: true }
+        Self { rotate_x: 0.0, rotate_y: 0.0, rotate_z: 0.0, depth: 0.0, origin: default_origin(), backface: true }
     }
 }
 
@@ -871,13 +879,21 @@ impl Transform3d {
     /// within a thousand boxes of the layer.
     pub fn sanitized(&self) -> Transform3d {
         let angle = |v: f64| if v.is_finite() { v.clamp(-360.0, 360.0) } else { 0.0 };
+        let pct = |v: f64| if v.is_finite() { v.clamp(0.0, 100.0) } else { 50.0 };
         Transform3d {
             rotate_x: angle(self.rotate_x),
             rotate_y: angle(self.rotate_y),
             rotate_z: angle(self.rotate_z),
             depth: if self.depth.is_finite() { self.depth.clamp(-10000.0, 10000.0) } else { 0.0 },
+            origin: (pct(self.origin.0), pct(self.origin.1)),
             backface: self.backface,
         }
+    }
+
+    /// The pivot in the layer's own coordinates, from the percent origin.
+    pub fn pivot(&self, w: f64, h: f64) -> (f64, f64) {
+        let t = self.sanitized();
+        (w * t.origin.0 / 100.0, h * t.origin.1 / 100.0)
     }
 
     /// Whether anything is turned (an identity effect draws nothing and takes no room).

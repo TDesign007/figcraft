@@ -283,6 +283,9 @@ pub(super) fn input(app: &mut FigApp, ui: &mut Ui, resp: &egui::Response) -> boo
     if !app.canvas.dragging && resp.hovered() && crate::guides::input(app, &ctx, pos) {
         return false;
     }
+    if !app.canvas.dragging && resp.hovered() && crate::canvas::gizmo::input(app, &ctx, pos) {
+        return false;
+    }
     if !app.canvas.dragging && resp.hovered() && crate::handles::input(app, &ctx, pos) {
         return false;
     }

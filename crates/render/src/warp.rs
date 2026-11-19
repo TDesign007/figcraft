@@ -71,8 +71,9 @@ pub(crate) fn draw_warped(ctx: &Ctx, pix: &mut Pixmap, n: &Node, xf: Affine, dep
     // turned plane can't sample aligned: they are left out (see the module notes).
     crate::draw::draw_content(ctx, &mut plane, n, lxf, depth, over_fills);
     crate::draw::layer_effects(ctx, &mut plane, n, n.id, lxf);
-    // The homography from the plane's own coordinates to this surface.
-    let pivot = (n.width / 2.0, n.height / 2.0);
+    // The homography from the plane's own coordinates to this surface (the turn about the
+    // effect's own pivot).
+    let pivot = t3.pivot(n.width, n.height);
     let d = figcraft_doc::transform3d::perspective_of(ctx.doc, n.id);
     let h = Homography::from_affine(xf).mul(figcraft_doc::transform3d::plane_homography(t3, pivot, d));
     // A plane facing away draws only when the back shows (as the mirrored front: the inverse

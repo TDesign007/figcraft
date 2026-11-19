@@ -136,6 +136,8 @@ pub(super) fn overlays(app: &FigApp, painter: &egui::Painter, t: &Tokens) -> Vec
     if let Some(te) = editing {
         text_edit_overlay(app, painter, t, &doc, &te, zoom);
     }
+    // The 3D transform's gizmo for the selection: the dashed original box and the axis rings.
+    crate::canvas::gizmo::draw(app, painter, &doc, &sel);
     // Smart guides and measurements (their labels kept clear of the size label).
     crate::measure_overlay::draw(app, painter, t, size_label);
     // Marquee.
