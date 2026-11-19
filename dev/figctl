@@ -1,0 +1,198 @@
+#!/usr/bin/env python3
+"""figctl — drive a running FigCraft dev app from any agent's shell.
+
+The app runs as a LaunchAgent (`figctl install`) with `--control 7979`, so every agent (Cursor,
+Claude Code, ZCode, Cline, Codex, a plain terminal — anything that can run a shell) drives the
+same live window at any time, no IDE or MCP configuration needed:
+
+  figctl status                     # is the app up
+  figctl run text.create '{"x":60,"y":60,"text":"Hello quik world"}'   # any engine command
+  figctl shot                       # PNG of the live window -> /tmp/figcraft-shot.png
+  figctl click 312 46 | rclick | dclick | move | key Enter | type " quik"
+  figctl inspect                    # the whole UI state as JSON
+  figctl scale                      # pixels-per-point, to convert screenshot pixels -> click points
+  figctl open file.figcraft | build | restart | position right | log | install | uninstall
+
+Screenshots come back in physical pixels; click points are egui points: divide by `figctl scale`
+(usually 2 on Retina).
+"""
+import json
+import os
+import pathlib
+import socket
+import subprocess
+import sys
+import time
+
+PORT = int(os.environ.get("FIGCRAFT_PORT", "7979"))
+REPO = pathlib.Path(__file__).resolve().parent.parent
+BIN = pathlib.Path(os.environ.get("FIGCRAFT_BIN", REPO / "target" / "debug" / "figcraft"))
+LABEL = "com.figcraft.dev"
+PLIST = pathlib.Path.home() / "Library" / "LaunchAgents" / f"{LABEL}.plist"
+LOG = pathlib.Path.home() / "Library" / "Logs" / "figcraft-dev.log"
+SHOT = "/tmp/figcraft-shot.png"
+
+
+def request(method, params=None, timeout=65.0):
+    """One JSON-lines request to the control channel; the reply's result or an error exit."""
+    line = json.dumps({"id": 1, "method": method, "params": params or {}}) + "\n"
+    s = socket.create_connection(("127.0.0.1", PORT), timeout=timeout)
+    try:
+        s.sendall(line.encode())
+        s.settimeout(timeout)
+        buf = b""
+        while not buf.endswith(b"\n"):
+            chunk = s.recv(1 << 20)
+            if not chunk:
+                raise RuntimeError("connection closed before a reply")
+            buf += chunk
+    finally:
+        s.close()
+    r = json.loads(buf.decode())
+    if not r.get("ok"):
+        raise RuntimeError(r.get("error", "unknown error"))
+    return r.get("result")
+
+
+def spawn_direct():
+    """No LaunchAgent: start the app detached, so it outlives this command."""
+    LOG.parent.mkdir(parents=True, exist_ok=True)
+    with open(LOG, "ab") as log:
+        subprocess.Popen([str(BIN), "--control", str(PORT)], stdout=log, stderr=log, start_new_session=True)
+
+
+def place(side="right"):
+    """Move the app window to one half of the screen (best effort: needs Accessibility)."""
+    screen = subprocess.run(
+        ["osascript", "-e", 'tell application "Finder" to get bounds of window of desktop'],
+        capture_output=True, text=True,
+    ).stdout.strip().split(",")
+    if len(screen) < 3:
+        return False
+    w, h = float(screen[2]), float(screen[3])
+    x0 = w / 2 if side == "right" else 0.0
+    script = (
+        'tell application "System Events" to tell (first process whose name is "figcraft")\n'
+        f"  set position of front window to {{{x0}, 25}}\n"
+        f"  set size of front window to {{{w / 2}, {h - 25}}}\n"
+        "end tell"
+    )
+    return subprocess.run(["osascript", "-e", script], capture_output=True).returncode == 0
+
+
+def main():
+    args = sys.argv[1:]
+    cmd = args[0] if args else "status"
+    rest = args[1:]
+
+    if cmd == "status":
+        try:
+            request("window.list", timeout=5.0)
+            print(f"up (control 127.0.0.1:{PORT})")
+        except Exception as e:
+            print(f"down ({e}); start it with `figctl install` or `figctl restart`")
+            sys.exit(1)
+    elif cmd == "run":
+        command = rest[0] if rest else sys.exit("usage: figctl run <command> [json-params]")
+        params = json.loads(rest[1]) if len(rest) > 1 else {}
+        print(json.dumps(request("engine.execute", {"command": command, "params": params}), ensure_ascii=False))
+    elif cmd == "exec":
+        method = rest[0] if rest else sys.exit("usage: figctl exec <method> [json-params]")
+        params = json.loads(rest[1]) if len(rest) > 1 else {}
+        print(json.dumps(request(method, params), ensure_ascii=False))
+    elif cmd == "shot":
+        path = rest[0] if rest else SHOT
+        request("ui.screenshot", {"path": path})
+        print(path)
+    elif cmd == "scale":
+        print(json.dumps(request("ui.inspect").get("uiScale", {}), ensure_ascii=False))
+    elif cmd == "inspect":
+        print(json.dumps(request("ui.inspect"), ensure_ascii=False))
+    elif cmd == "key":
+        key = rest[0] if rest else sys.exit("usage: figctl key <KeyName>")
+        request("ui.input", {"events": [{"key": key}]})
+    elif cmd == "type":
+        text = " ".join(rest) if rest else sys.exit('usage: figctl type "text"')
+        request("ui.input", {"events": [{"text": text}]})
+    elif cmd in ("click", "rclick", "dclick", "move"):
+        if len(rest) < 2:
+            sys.exit(f"usage: figctl {cmd} <x> <y>")
+        x, y = float(rest[0]), float(rest[1])
+        if cmd == "move":
+            request("ui.input", {"events": [{"move": [x, y]}]})
+        else:
+            button = "secondary" if cmd == "rclick" else "primary"
+            if cmd == "dclick":
+                request("ui.pointer", {"kind": "double", "sx": x, "sy": y})
+            else:
+                request("ui.input", {"events": [{"down": [x, y], "button": button}, {"up": [x, y], "button": button}]})
+    elif cmd == "open":
+        path = rest[0] if rest else sys.exit("usage: figctl open <file.figcraft>")
+        request("engine.execute", {"command": "file.open", "params": {"path": os.path.abspath(path)}})
+    elif cmd == "build":
+        subprocess.run(["cargo", "build", "-p", "figcraft"], cwd=REPO, check=True)
+    elif cmd == "restart":
+        if PLIST.exists():
+            subprocess.run(["launchctl", "kickstart", "-k", f"gui/{os.getuid()}/{LABEL}"], check=False)
+        else:
+            subprocess.run(["pkill", "-f", str(BIN)], check=False)
+            time.sleep(0.5)
+            spawn_direct()
+        for _ in range(60):
+            try:
+                request("window.list", timeout=2.0)
+                place("right")  # best effort: the window back to the right half after a relaunch
+                print("restarted and up (window on the right half)")
+                return
+            except Exception:
+                time.sleep(0.5)
+        print("restarted but the control channel is not answering yet")
+    elif cmd == "position":
+        side = rest[0] if rest else "right"
+        if place(side):
+            print(f"window on the {side} half")
+        else:
+            print("could not move the window (grant Accessibility to your terminal)")
+            sys.exit(1)
+    elif cmd == "log":
+        n = int(rest[0]) if rest else 30
+        print(pathlib.Path(LOG).read_text(errors="replace")[-n * 200:] if LOG.exists() else "no log yet")
+    elif cmd == "install":
+        PLIST.parent.mkdir(parents=True, exist_ok=True)
+        PLIST.write_text(
+            f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>{LABEL}</string>
+  <key>ProgramArguments</key><array>
+    <string>{BIN}</string><string>--control</string><string>{PORT}</string>
+  </array>
+  <key>KeepAlive</key><true/>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>{LOG}</string>
+  <key>StandardErrorPath</key><string>{LOG}</string>
+</dict></plist>
+"""
+        )
+        subprocess.run(["launchctl", "bootout", f"gui/{os.getuid()}/{LABEL}"], capture_output=True)
+        subprocess.run(["launchctl", "bootstrap", f"gui/{os.getuid()}", str(PLIST)], check=True)
+        for _ in range(60):
+            try:
+                request("window.list", timeout=2.0)
+                place("right")  # best effort: park the window on the right half
+                print(f"installed: the app is always on at 127.0.0.1:{PORT} (log: {LOG})")
+                print("remove it any time with `figctl uninstall`")
+                return
+            except Exception:
+                time.sleep(0.5)
+        print("installed; the app is starting")
+    elif cmd == "uninstall":
+        subprocess.run(["launchctl", "bootout", f"gui/{os.getuid()}/{LABEL}"], capture_output=True)
+        PLIST.unlink(missing_ok=True)
+        print("removed (a running app is left alone; pkill figcraft to stop it)")
+    else:
+        sys.exit(__doc__)
+
+
+if __name__ == "__main__":
+    main()
