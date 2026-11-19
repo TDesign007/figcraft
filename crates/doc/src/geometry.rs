@@ -230,6 +230,10 @@ fn hit_rec(
     if (!n.visible && !also.is_some_and(|a| a.hidden)) || n.locked && !opts.locked {
         return None;
     }
+    // A 3D transform warps the layer and everything in it: the point un-warps through the
+    // homography's inverse first, then hits as on the flat plane (the tolerance rides along
+    // approximately).
+    let pt = crate::transform3d::unwarped(doc, id, pt).unwrap_or(pt);
     if let NodeKind::Section { contents_hidden: true } = n.kind {
         return hits_node_itself(doc, id, n, pt, tol, outline).then_some(id);
     }

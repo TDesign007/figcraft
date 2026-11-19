@@ -53,9 +53,13 @@ impl TextOnScreen {
     }
 }
 
-/// A node's oriented outline in screen space.
+/// A node's oriented outline in screen space. A layer with a 3D transform shows its projected
+/// quad instead of its box (what the layer paints).
 pub(crate) fn node_quad(app: &FigApp, doc: &Document, id: NodeId) -> Option<[Pos2; 4]> {
     let n = doc.node(id)?;
+    if let Some(q) = figcraft_doc::transform3d::projected_quad(doc, id) {
+        return Some(q.map(|p| app.to_screen(p.x, p.y)));
+    }
     let w = doc.world_transform(id);
     let corners = [Point::new(0.0, 0.0), Point::new(n.width, 0.0), Point::new(n.width, n.height), Point::new(0.0, n.height)];
     Some(corners.map(|c| {

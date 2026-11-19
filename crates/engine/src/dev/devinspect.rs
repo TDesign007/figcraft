@@ -479,6 +479,11 @@ pub fn properties_with(doc: &Document, id: NodeId, fmt: ColorFormat) -> Vec<Sect
                     pct(g.splay)
                 ),
             ),
+            EffectKind::Transform3d(t) => prop(
+                "3D transform",
+                format!("X {}° Y {}° depth {}{}", num(t.rotate_x), num(t.rotate_y), num(t.depth), if t.backface { "" } else { ", back hidden" }),
+            ),
+            EffectKind::Perspective(p) => prop("Perspective", format!("{} px", num(p.sanitized().distance))),
         })
         .collect();
     if !effects.is_empty() {

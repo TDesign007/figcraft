@@ -20,6 +20,7 @@ pub mod ids;
 pub mod library;
 pub mod node;
 pub mod props;
+pub mod transform3d;
 pub mod proto;
 pub mod styles;
 pub mod text;

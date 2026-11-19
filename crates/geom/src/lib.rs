@@ -11,6 +11,8 @@ pub use kurbo::{Affine, BezPath, Point, Rect, Shape, Size, Vec2};
 use kurbo::ParamCurve;
 use std::f64::consts::{FRAC_PI_2, PI, TAU};
 
+pub mod homography;
+pub use homography::Homography;
 pub mod measure;
 mod simplify;
 mod transform;

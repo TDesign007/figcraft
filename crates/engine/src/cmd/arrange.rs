@@ -455,6 +455,9 @@ pub fn scale_node(doc: &mut Document, id: NodeId, k: f64) -> Result<()> {
                     // From the frost it draws with (an older file's past 100 draws at 100).
                     g.frost = (g.sanitized().frost * k).min(figcraft_doc::Glass::MAX_FROST);
                 }
+                // Angles don't scale; the depth and the camera distance are px.
+                EffectKind::Transform3d(t) => t.depth *= k,
+                EffectKind::Perspective(p) => p.distance *= k,
             }
         }
         if let Some(l) = n.layout.as_mut() {

@@ -571,6 +571,9 @@ pub fn effect_margin(n: &Node) -> f64 {
             {
                 s.radius * 2.0 + s.spread.abs() + s.offset.0.abs() + s.offset.1.abs()
             }
+            // A turned plane can reach past its box (a perspective close-up doubles it at worst in
+            // this bound; the frame's camera clamps above a safe distance).
+            EffectKind::Transform3d(_) => crate::warp::margin(n),
             _ => 0.0,
         })
         .map(finite)
@@ -590,7 +593,7 @@ pub fn paint_bounds(doc: &Document, id: NodeId) -> Option<Rect> {
 }
 
 /// The local → page map of a layer drawn at `xf` (local → device): the view's scale taken out.
-fn to_page(ctx: &Ctx, xf: Affine) -> Affine {
+pub(crate) fn to_page(ctx: &Ctx, xf: Affine) -> Affine {
     if ctx.scale.is_finite() && ctx.scale > 0.0 { Affine::scale(1.0 / ctx.scale) * xf } else { xf }
 }
 
@@ -698,6 +701,12 @@ fn draw_layer(ctx: &Ctx, pix: &mut Pixmap, n: &Node, parent_xf: Affine, depth: u
     }
     if outline {
         draw_outline(&Ctx { outline_mode: true, ..*ctx }, pix, n, xf, depth);
+        return;
+    }
+    // A 3D transform warps the whole layer through one homography: drawn flat on its plane, then
+    // projected (children flatten onto the plane).
+    if let Some(t3) = crate::warp::visible(n) {
+        crate::warp::draw_warped(ctx, pix, n, xf, depth, &t3);
         return;
     }
     if ctx.lod && dev.width().max(dev.height()) < lod::TINY_PX && lod::splattable_within(ctx.doc, n, 0, Some(ctx.bounds)).0 {
@@ -823,7 +832,7 @@ fn backdrop_layer(ctx: &Ctx, pix: &Pixmap, n: &Node, sh: &shadow::Outline, at: (
 }
 
 /// Node `n`'s layer blur, noise and texture on its `layer`, in list order.
-fn layer_effects(ctx: &Ctx, layer: &mut Pixmap, n: &Node, id: NodeId, lxf: Affine) {
+pub(crate) fn layer_effects(ctx: &Ctx, layer: &mut Pixmap, n: &Node, id: NodeId, lxf: Affine) {
     for e in n.effects.iter().filter(|e| e.visible) {
         match &e.kind {
             EffectKind::LayerBlur(b) => blur::apply(layer, b, (n.width, n.height), lxf, ctx.scale),
@@ -860,7 +869,7 @@ fn draw_outline(ctx: &Ctx, pix: &mut Pixmap, n: &Node, xf: Affine, depth: usize)
 }
 
 /// What paints over a node's fills, under its children and strokes (its inner shadows).
-type OverFills<'a> = Option<&'a dyn Fn(&mut Pixmap)>;
+pub(crate) type OverFills<'a> = Option<&'a dyn Fn(&mut Pixmap)>;
 
 /// A vector's network when any of its regions has paints or a paint frame of its own.
 fn region_painted(n: &Node) -> Option<&figcraft_doc::VectorNetwork> {
@@ -888,7 +897,7 @@ fn fill_vector_regions(ctx: &Ctx, pix: &mut Pixmap, n: &Node, network: &figcraft
 }
 
 /// Fills, `over_fills`, children (clipped), strokes and text of a node, without opacity/effects.
-fn draw_content(ctx: &Ctx, pix: &mut Pixmap, n: &Node, xf: Affine, depth: usize, over_fills: OverFills) {
+pub(crate) fn draw_content(ctx: &Ctx, pix: &mut Pixmap, n: &Node, xf: Affine, depth: usize, over_fills: OverFills) {
     let doc = ctx.doc;
     let (w, h) = (n.width, n.height);
     match &n.kind {

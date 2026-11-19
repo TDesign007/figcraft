@@ -22,6 +22,7 @@ pub mod paint;
 pub mod pattern;
 pub mod retained;
 pub mod shadow;
+pub mod warp;
 
 pub use dots::Dots;
 pub use draw::{at_layer_depth, layer_depth, node_outline, paint_bounds, stroke_fill, subtree_outline, ts_path};
@@ -597,6 +598,8 @@ mod backdrop_shadow_tests;
 mod backdrop_tests;
 #[cfg(test)]
 mod band_tests;
+#[cfg(test)]
+mod warp_tests;
 #[cfg(test)]
 mod boolean_budget_tests;
 #[cfg(test)]

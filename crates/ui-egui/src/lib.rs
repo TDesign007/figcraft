@@ -268,6 +268,8 @@ mod shortcuts_tests;
 #[cfg(test)]
 mod stroke_row_tests;
 #[cfg(test)]
+mod transform3d_ui_tests;
+#[cfg(test)]
 mod style_folder_rename_tests;
 #[cfg(test)]
 mod style_props_tests;

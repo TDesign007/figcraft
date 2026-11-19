@@ -1,7 +1,7 @@
 use super::menu::{context_popup, menu_check, menu_item, menu_popup, row, row_context_menu, row_rect, row_target};
 use super::{
     Blur, BlurType, Document, Effect, EffectKind, FieldEdit, FigApp, Glass, GridAlign, GridKind, Icon, Id, LayoutGrid, Lead, ListDrag,
-    MAX_BLUR_RADIUS, NodeId, Noise, NoiseMode, Paint, Sense, Shadow, StyleSlot, Texture, Ui, VariableType, common, icons, json, move_flags,
+    MAX_BLUR_RADIUS, NodeId, Noise, NoiseMode, Paint, Perspective, Sense, Shadow, StyleSlot, Texture, Transform3d, Ui, VariableType, common, icons, json, move_flags,
     moved_index, remove_flags, removed_index, style_picker, tr, trf, trn, vec2, widgets,
 };
 use crate::property_rows::PropertyKind;
@@ -340,6 +340,47 @@ fn effect_settings(app: &mut FigApp, ui: &mut Ui, ids: &[NodeId], i: usize, e: &
             row(ui, 32.0, |ui| {
                 let ed = fx_field_in(app, ui, ids, i, "splay", Lead::Text(tr("Splay")), pct(g.splay), "%", half);
                 edit(app, ed, &|v| with(&|gl| gl.splay = unit(v)));
+            });
+        }
+        EffectKind::Transform3d(t) => {
+            let with = |f: &dyn Fn(&mut Transform3d)| {
+                tweaked(e, |k| {
+                    if let EffectKind::Transform3d(t2) = k {
+                        f(t2);
+                    }
+                })
+            };
+            // Figma's 3D transform settings: the two turns in degrees and the depth along the
+            // turned plane's normal.
+            row(ui, 32.0, |ui| {
+                let ed = fx_field_in(app, ui, ids, i, "rotateX", Lead::Text("X"), Some(t.rotate_x), "°", half);
+                edit(app, ed, &|v| with(&|t2: &mut Transform3d| t2.rotate_x = v.clamp(-360.0, 360.0)));
+                let ed = fx_field_in(app, ui, ids, i, "rotateY", Lead::Text("Y"), Some(t.rotate_y), "°", half);
+                edit(app, ed, &|v| with(&|t2: &mut Transform3d| t2.rotate_y = v.clamp(-360.0, 360.0)));
+            });
+            row(ui, 32.0, |ui| {
+                let ed = fx_field_in(app, ui, ids, i, "depth", Lead::Text(tr("Depth")), Some(t.depth), "", half);
+                edit(app, ed, &|v| with(&|t2: &mut Transform3d| t2.depth = v.clamp(-10_000.0, 10_000.0)));
+            });
+            row(ui, 32.0, |ui| {
+                // Figma's backface setting: when the plane faces away, the mirrored front shows
+                // only with this on.
+                if widgets::checkbox(ui, t.backface, tr("Backface")) {
+                    set(app, with(&|t2: &mut Transform3d| t2.backface = !t2.backface), None);
+                }
+            });
+        }
+        EffectKind::Perspective(p) => {
+            let with = |f: &dyn Fn(&mut Perspective)| {
+                tweaked(e, |k| {
+                    if let EffectKind::Perspective(p2) = k {
+                        f(p2);
+                    }
+                })
+            };
+            row(ui, 32.0, |ui| {
+                let ed = fx_field_in(app, ui, ids, i, "distance", Lead::Text(tr("Distance")), Some(p.distance), "", half);
+                edit(app, ed, &|v| with(&|p2: &mut Perspective| p2.distance = v.clamp(1.0, 100_000.0)));
             });
         }
     }

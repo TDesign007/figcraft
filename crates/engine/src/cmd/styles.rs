@@ -1390,6 +1390,10 @@ pub(crate) fn set_effect_field(effects: &mut [Effect], i: usize, prop: &str, val
         (EffectKind::Glass(g), field, Some(x), _) => {
             g.set_bound(field, x);
         }
+        (EffectKind::Transform3d(t), "rotateX", Some(x), _) => t.rotate_x = x.clamp(-360.0, 360.0),
+        (EffectKind::Transform3d(t), "rotateY", Some(x), _) => t.rotate_y = x.clamp(-360.0, 360.0),
+        (EffectKind::Transform3d(t), "depth", Some(x), _) => t.depth = x.clamp(-10_000.0, 10_000.0),
+        (EffectKind::Perspective(p), "distance", Some(x), _) => p.distance = x.clamp(1.0, 100_000.0),
         _ => {}
     }
 }

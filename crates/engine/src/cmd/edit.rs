@@ -422,7 +422,7 @@ pub fn specs() -> Vec<CommandSpec> {
         spec!(
             "effect.add",
             "Add effect",
-            "{ids?, type? (dropShadow|innerShadow|layerBlur|backgroundBlur|noise|texture|glass), effect? {..}}",
+            "{ids?, type? (dropShadow|innerShadow|layerBlur|backgroundBlur|noise|texture|glass|transform3d|perspective), effect? {..}}",
             true,
             effect_add
         ),

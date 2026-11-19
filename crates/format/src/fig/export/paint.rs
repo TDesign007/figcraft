@@ -249,6 +249,11 @@ impl<'d> Exporter<'d> {
                 self.warn("glass effects keep only their frost");
                 f.extend([("type", e("GLASS")), ("radius", fl(g.sanitized().frost))]);
             }
+            // The 3D transform and the perspective are Figma-side effects the kiwi schema here
+            // has no fields for: the layers still export, turned they don't.
+            EffectKind::Transform3d(_) | EffectKind::Perspective(_) => {
+                self.warn("3D transforms and perspective are left out of .fig exports");
+            }
         }
         o(f)
     }

@@ -841,6 +841,75 @@ impl Blur {
     }
 }
 
+/// A layer turned in 3D space (Figma's 3D transform): rotations in degrees about the layer's
+/// centre (CSS `rotateX` / `rotateY`), `depth` along the turned plane's normal (CSS
+/// `translateZ`, px, positive toward the camera), and whether the mirrored back shows when the
+/// plane faces away.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Transform3d {
+    #[serde(default)]
+    pub rotate_x: f64,
+    #[serde(default)]
+    pub rotate_y: f64,
+    #[serde(default)]
+    pub depth: f64,
+    #[serde(default = "yes")]
+    pub backface: bool,
+}
+
+impl Default for Transform3d {
+    fn default() -> Self {
+        Self { rotate_x: 0.0, rotate_y: 0.0, depth: 0.0, backface: true }
+    }
+}
+
+impl Transform3d {
+    /// The values made safe to draw: angles finite within a full turn either way, depth finite
+    /// within a thousand boxes of the layer.
+    pub fn sanitized(&self) -> Transform3d {
+        let angle = |v: f64| if v.is_finite() { v.clamp(-360.0, 360.0) } else { 0.0 };
+        Transform3d {
+            rotate_x: angle(self.rotate_x),
+            rotate_y: angle(self.rotate_y),
+            depth: if self.depth.is_finite() { self.depth.clamp(-10000.0, 10000.0) } else { 0.0 },
+            backface: self.backface,
+        }
+    }
+
+    /// Whether anything is turned (an identity effect draws nothing and takes no room).
+    pub fn is_identity(&self) -> bool {
+        self.rotate_x == 0.0 && self.rotate_y == 0.0 && self.depth == 0.0
+    }
+}
+
+/// A frame's camera distance for its descendants' 3D transforms (Figma's Perspective effect), in
+/// px: smaller is a closer viewpoint (a stronger effect), larger a farther one.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Perspective {
+    #[serde(default = "default_perspective")]
+    pub distance: f64,
+}
+
+fn default_perspective() -> f64 {
+    800.0
+}
+
+impl Default for Perspective {
+    fn default() -> Self {
+        Self { distance: default_perspective() }
+    }
+}
+
+impl Perspective {
+    /// The distance made safe to draw: finite, at least a px (a camera on the plane divides by
+    /// nothing), at most a hundred thousand px.
+    pub fn sanitized(&self) -> Perspective {
+        Perspective { distance: if self.distance.is_finite() { self.distance.clamp(1.0, 100_000.0) } else { 800.0 } }
+    }
+}
+
 /// One effect in a node's effect list.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
@@ -855,6 +924,10 @@ pub enum EffectKind {
     Texture(Texture),
     /// The backdrop through curved glass.
     Glass(Glass),
+    /// A layer turned in 3D space (Figma's 3D transform).
+    Transform3d(Transform3d),
+    /// A frame's camera distance for its descendants' 3D transforms (Figma's Perspective).
+    Perspective(Perspective),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -871,7 +944,7 @@ fn yes() -> bool {
 
 impl Effect {
     /// Effect types in the order the Design panel lists them: (label, type name).
-    pub const TYPES: [(&str, &str); 7] = [
+    pub const TYPES: [(&str, &str); 9] = [
         ("Drop shadow", "dropShadow"),
         ("Inner shadow", "innerShadow"),
         ("Layer blur", "layerBlur"),
@@ -879,6 +952,8 @@ impl Effect {
         ("Noise", "noise"),
         ("Texture", "texture"),
         ("Glass", "glass"),
+        ("3D transform", "transform3d"),
+        ("Perspective", "perspective"),
     ];
 
     fn of(kind: EffectKind) -> Self {
@@ -905,6 +980,12 @@ impl Effect {
     pub fn glass() -> Self {
         Self::of(EffectKind::Glass(Glass::default()))
     }
+    pub fn transform3d() -> Self {
+        Self::of(EffectKind::Transform3d(Transform3d::default()))
+    }
+    pub fn perspective() -> Self {
+        Self::of(EffectKind::Perspective(Perspective::default()))
+    }
 
     /// A new effect of a type named like `dropShadow`, `drop shadow` or `DROP_SHADOW` (`blur` is
     /// a layer blur), with its defaults.
@@ -917,6 +998,8 @@ impl Effect {
             "noise" => Self::noise(),
             "texture" => Self::texture(),
             "glass" => Self::glass(),
+            "transform3d" | "3dtransform" => Self::transform3d(),
+            "perspective" => Self::perspective(),
             _ => return None,
         })
     }
@@ -930,6 +1013,8 @@ impl Effect {
             EffectKind::Noise(_) => "Noise",
             EffectKind::Texture(_) => "Texture",
             EffectKind::Glass(_) => "Glass",
+            EffectKind::Transform3d(_) => "3D transform",
+            EffectKind::Perspective(_) => "Perspective",
         }
     }
     /// How far outside the node's bounds this effect can paint (a shadow's spread at a sharp
