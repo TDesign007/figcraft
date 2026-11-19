@@ -632,6 +632,11 @@ pub fn popups(app: &mut FigApp, ctx: &egui::Context) {
     }
     crate::colorpicker::show(app, ctx);
     palette(app, ctx);
+    // The 3D transform's popover, while one is open (it edits the effect like the fields do).
+    if let Some((id, i, at)) = app.ui.t3_popover.clone() {
+        let tokens = crate::theme::Tokens::get(ctx);
+        crate::panels::right::transform3d::popover(app, ctx, id, i, at, &tokens);
+    }
 }
 
 /// The context menu's Copy as submenu: its key in the tree, and the marker row in the entries.

@@ -102,7 +102,7 @@ pub(crate) fn draw_warped(ctx: &Ctx, pix: &mut Pixmap, n: &Node, xf: Affine, dep
 /// projection's bounds. Returns the pixmap and where it sits on the surface. Each surface pixel
 /// takes its plane pixel through the inverse, so a turn in either direction, a mirror (the
 /// plane's back) and a perspective all come out right.
-fn warp(src: &Pixmap, r: Rect, rs: f64, h: &Homography, dw: u32, dh: u32) -> Option<(Pixmap, (i32, i32))> {
+pub(crate) fn warp(src: &Pixmap, r: Rect, rs: f64, h: &Homography, dw: u32, dh: u32) -> Option<(Pixmap, (i32, i32))> {
     let inv = h.inverse()?;
     let q = h.quad(r);
     let (qx0, qx1) = quad_extent(&q, |p| p.x);

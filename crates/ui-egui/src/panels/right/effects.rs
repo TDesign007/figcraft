@@ -42,16 +42,29 @@ pub(super) fn effects(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[Node
             }
             let w = ui.available_width() - 60.0;
             let resp = widgets::dropdown(ui, tr(e.label()), w, None);
-            menu_popup(&resp).show(|ui| {
-                for (l, ty) in Effect::TYPES {
-                    if menu_item(ui, tr(l), "")
-                        && let Some(ne) = Effect::of_type(ty)
-                    {
-                        app.run("effect.set", json!({"ids": ids, "index": i, "effect": ne}));
-                        ui.close();
-                    }
+            if matches!(e.kind, EffectKind::Transform3d(_)) {
+                // Figma's 3D transform: the dropdown opens the popover (the preview and the
+                // fields), not the type list.
+                if resp.clicked()
+                    && let Some(first) = ids.first()
+                {
+                    app.ui.t3_popover = match app.ui.t3_popover {
+                        Some((open_id, open_i, _)) if open_id == *first && open_i == i => None,
+                        _ => Some((*first, i, resp.rect)),
+                    };
                 }
-            });
+            } else {
+                menu_popup(&resp).show(|ui| {
+                    for (l, ty) in Effect::TYPES {
+                        if menu_item(ui, tr(l), "")
+                            && let Some(ne) = Effect::of_type(ty)
+                        {
+                            app.run("effect.set", json!({"ids": ids, "index": i, "effect": ne}));
+                            ui.close();
+                        }
+                    }
+                });
+            }
             let (toggle, remove) = widgets::tight_end(ui, |ui| {
                 (
                     icons::button(ui, if e.visible { Icon::Eye } else { Icon::EyeOff }, 24.0, false, tr("Toggle")).clicked(),
@@ -122,7 +135,7 @@ fn fx_field(app: &mut FigApp, ui: &mut Ui, ids: &[NodeId], i: usize, prop: &str,
 }
 
 /// [`fx_field`] showing `value` as given (a glass percentage) with `suffix` after it.
-fn fx_field_in(
+pub(super) fn fx_field_in(
     app: &mut FigApp,
     ui: &mut Ui,
     ids: &[NodeId],

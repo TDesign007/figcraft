@@ -14,15 +14,18 @@ use figcraft_geom::{Affine, Point, Rect};
 /// divide (`None`: no perspective — the projection is orthographic, where depth shows nothing).
 pub fn plane_homography(t3: &Transform3d, pivot: (f64, f64), perspective: Option<f64>) -> Homography {
     let t3 = t3.sanitized();
-    let (ax, ay) = (t3.rotate_x.to_radians(), t3.rotate_y.to_radians());
-    let (cx, sx, cy, sy) = (ax.cos(), ax.sin(), ay.cos(), ay.sin());
+    let (ax, ay, az) = (t3.rotate_x.to_radians(), t3.rotate_y.to_radians(), t3.rotate_z.to_radians());
+    let (cx, sx, cy, sy, cz, sz) = (ax.cos(), ax.sin(), ay.cos(), ay.sin(), az.cos(), az.sin());
     // The affine part in 3D, restricted to the plane (z = 0): a plane point (x, y) goes through
-    // `translateZ` after both turns, so its depth is linear in x and y.
+    // `translateZ` after the turns, so its depth is linear in x and y.
     let turn = |x: f64, y: f64| -> (f64, f64, f64) {
-        // rotateY first (CSS composes `rotateX(a) rotateY(b)` as Rx·Ry).
-        let x1 = x * cy;
-        let z1 = -x * sy;
-        let y1 = y;
+        // The plane spins in itself first (CSS composes `rotateX(a) rotateY(b) rotateZ(c)` as
+        // Rx·Ry·Rz), then rotateY, then rotateX.
+        let (x0, y0) = (x * cz - y * sz, x * sz + y * cz);
+        // rotateY.
+        let x1 = x0 * cy;
+        let z1 = -x0 * sy;
+        let y1 = y0;
         // Then rotateX.
         let y2 = y1 * cx - z1 * sx;
         let z2 = y1 * sx + z1 * cx;
@@ -175,7 +178,7 @@ mod tests {
     /// A point maps back to itself through the turn and its inverse.
     #[test]
     fn plane_round_trips_through_the_inverse() {
-        let t3 = Transform3d { rotate_x: 30.0, rotate_y: 20.0, depth: 50.0, backface: true };
+        let t3 = Transform3d { rotate_x: 30.0, rotate_y: 20.0, rotate_z: 0.0, depth: 50.0, backface: true };
         let h = plane_homography(&t3, (50.0, 50.0), Some(800.0));
         let inv = h.inverse().unwrap();
         for (x, y) in [(0.0, 0.0), (100.0, 0.0), (50.0, 50.0), (13.0, 87.0)] {

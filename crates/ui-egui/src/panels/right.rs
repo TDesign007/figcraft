@@ -23,6 +23,7 @@ use crate::widgets::{self, Edit, FIELD_H, FieldEdit, Lead, PAD};
 use crate::{FigApp, RightTab};
 
 mod effects;
+pub(crate) mod transform3d;
 mod inspect;
 mod menu;
 mod paints;

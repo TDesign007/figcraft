@@ -1,8 +1,8 @@
 //! The Design panel's effect rows for the 3D transform and the Perspective: the row names the
-//! effect, the type menu lists both among the effect types, and the opened settings show the
-//! fields (the turns, the depth, the backface; the camera distance).
+//! effect, the type menu lists both among the effect types, the opened settings show the fields,
+//! and the popover opens beside the row with a live preview (dragged to turn, reset to zero).
 
-use egui::{Pos2, Shape};
+use egui::{Pos2, Rect, Shape, Vec2};
 use figcraft_doc::NodeId;
 use figcraft_engine::Session;
 use serde_json::json;
@@ -25,15 +25,17 @@ fn rect_with_effect(effect: &serde_json::Value) -> (Ui, NodeId) {
     (u, r)
 }
 
+fn row_rect() -> Rect {
+    Rect::from_min_size(Pos2::new(920.0, 470.0), Vec2::new(150.0, 30.0))
+}
+
 #[test]
 fn the_3d_transform_row_shows_its_settings() {
     let (mut u, _r) = rect_with_effect(&json!({"type": "transform3d", "rotateX": 30.0, "rotateY": -40.0, "depth": 60.0, "backface": false}));
     let shapes = flat(&u.frame_output(vec![]).shapes);
     assert!(has_text(&shapes, "3D transform"), "the row names the effect");
-    // The opened settings: the two turns (their degree suffix), the depth and the backface.
     assert!(has_text(&shapes, "Backface"), "the backface setting shows");
     assert!(has_text(&shapes, "Depth"), "the depth field shows");
-    // The turned values are there (the fields show them with a degree suffix).
     assert!(has_text(&shapes, "30°"), "the X turn's value");
     assert!(has_text(&shapes, "-40°"), "the Y turn's value");
 }
@@ -50,7 +52,6 @@ fn the_perspective_row_shows_its_distance() {
 fn the_type_menu_lists_the_new_effects() {
     let (mut u, _r) = rect_with_effect(&json!({"type": "layerBlur"}));
     let shapes = flat(&u.frame_output(vec![]).shapes);
-    // The row's type dropdown opens the list of effect types.
     let label = crate::live_tests::text_center(&shapes, "Layer blur");
     let at = Pos2::new(label.x, label.y);
     u.frame(vec![egui::Event::PointerMoved(at)]);
@@ -59,4 +60,76 @@ fn the_type_menu_lists_the_new_effects() {
     let shapes: Vec<Shape> = flat(&u.frame_output(vec![]).shapes);
     assert!(has_text(&shapes, "3D transform"), "the menu lists the 3D transform");
     assert!(has_text(&shapes, "Perspective"), "the menu lists the Perspective");
+}
+
+#[test]
+fn the_popover_opens_beside_the_row_with_the_preview_and_the_fields() {
+    let (mut u, r) = rect_with_effect(&json!({"type": "transform3d", "rotateX": -29.0, "rotateY": -45.0, "depth": 80.0}));
+    u.app.ui.t3_popover = Some((r, 0, row_rect()));
+    let shapes = flat(&u.frame_output(vec![]).shapes);
+    assert!(has_text(&shapes, "3D transform"), "the popover's title");
+    assert!(has_text(&shapes, "Rotation"), "the turns' section label");
+    assert!(has_text(&shapes, "Depth"), "the depth field");
+    // The popover's first frame lays it out invisibly (its placement needs the size): the next
+    // one draws it for real.
+    u.frame(vec![]);
+    // The preview's own rect, as the popover actually placed it.
+    let preview = u.ctx.read_response(egui::Id::unique("t3_preview")).map(|r| r.rect).unwrap_or_else(|| panic!("the popover's preview is drawn"));
+    // Drag across the preview: down, move, up in frames.
+    let centre = preview.center();
+    if let Some(resp) = u.ctx.read_response(egui::Id::unique("t3_preview")) {
+        eprintln!("preview rect: {:?}", resp.rect);
+    } else {
+        eprintln!("preview: no response yet");
+    }
+    let press = |p: Pos2, pressed: bool| egui::Event::PointerButton { pos: p, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+    u.frame(vec![egui::Event::PointerMoved(centre), press(centre, true)]);
+    u.frame(vec![egui::Event::PointerMoved(centre + egui::vec2(15.0, 10.0))]);
+    u.frame(vec![egui::Event::PointerMoved(centre + egui::vec2(30.0, 20.0))]);
+    u.frame(vec![egui::Event::PointerMoved(centre + egui::vec2(30.0, 20.0)), press(centre + egui::vec2(30.0, 20.0), false)]);
+    u.frame(vec![]);
+    let n = u.app.session.doc().unwrap().node(r).unwrap().clone();
+    let figcraft_doc::EffectKind::Transform3d(t) = &n.effects[0].kind else { panic!("no turn") };
+    assert!((t.rotate_y - (-45.0 + 30.0 * 0.55)).abs() < 0.1, "the drag turned Y by the drag's distance: {}", t.rotate_y);
+    assert!((t.rotate_x - (-29.0 + 20.0 * 0.55)).abs() < 0.1, "the drag turned X: {}", t.rotate_x);
+}
+
+#[test]
+fn the_reset_zeroes_the_turns_and_the_depth() {
+    let (mut u, r) = rect_with_effect(&json!({"type": "transform3d", "rotateX": -29.0, "rotateY": -45.0, "depth": 80.0}));
+    u.app.ui.t3_popover = Some((r, 0, row_rect()));
+    u.frame(vec![]);
+    // The reset button sits at the preview's bottom-right corner (the preview's rect from the
+    // popover's placement beside the row).
+    // The preview's own rect, as the popover actually placed it.
+    let preview = u.ctx.read_response(egui::Id::unique("t3_preview")).map(|r| r.rect).unwrap_or_else(|| panic!("the popover's preview is drawn"));
+    let reset = preview.right_bottom() - egui::vec2(18.0, 18.0);
+    u.frame(vec![egui::Event::PointerMoved(reset)]);
+    u.frame(vec![egui::Event::PointerButton { pos: reset, button: egui::PointerButton::Primary, pressed: true, modifiers: egui::Modifiers::NONE }]);
+    u.frame(vec![egui::Event::PointerButton { pos: reset, button: egui::PointerButton::Primary, pressed: false, modifiers: egui::Modifiers::NONE }]);
+    u.frame(vec![]);
+    let n = u.app.session.doc().unwrap().node(r).unwrap().clone();
+    let figcraft_doc::EffectKind::Transform3d(t) = &n.effects[0].kind else { panic!("no turn") };
+    assert_eq!((t.rotate_x, t.rotate_y, t.depth), (0.0, 0.0, 0.0), "the reset zeroes everything");
+}
+
+#[test]
+fn clicking_the_row_dropdown_opens_the_popover() {
+    let (mut u, _r) = rect_with_effect(&json!({"type": "transform3d", "rotateX": 10.0}));
+    let shapes = flat(&u.frame_output(vec![]).shapes);
+    let at = crate::live_tests::text_center(&shapes, "3D transform");
+    let press = |p: Pos2, pressed: bool| egui::Event::PointerButton { pos: p, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+    u.frame(vec![egui::Event::PointerMoved(at)]);
+    u.frame(vec![press(at, true)]);
+    u.frame(vec![press(at, false)]);
+    u.frame(vec![]);
+    assert!(u.app.ui.t3_popover.is_some(), "the dropdown click opens the popover");
+    // A second click on the same row's dropdown closes it again.
+    let shapes = flat(&u.frame_output(vec![]).shapes);
+    let at = crate::live_tests::text_center(&shapes, "3D transform");
+    u.frame(vec![egui::Event::PointerMoved(at)]);
+    u.frame(vec![press(at, true)]);
+    u.frame(vec![press(at, false)]);
+    u.frame(vec![]);
+    assert!(u.app.ui.t3_popover.is_none(), "the second click closes it");
 }

@@ -853,6 +853,8 @@ pub struct Transform3d {
     #[serde(default)]
     pub rotate_y: f64,
     #[serde(default)]
+    pub rotate_z: f64,
+    #[serde(default)]
     pub depth: f64,
     #[serde(default = "yes")]
     pub backface: bool,
@@ -860,7 +862,7 @@ pub struct Transform3d {
 
 impl Default for Transform3d {
     fn default() -> Self {
-        Self { rotate_x: 0.0, rotate_y: 0.0, depth: 0.0, backface: true }
+        Self { rotate_x: 0.0, rotate_y: 0.0, rotate_z: 0.0, depth: 0.0, backface: true }
     }
 }
 
@@ -872,6 +874,7 @@ impl Transform3d {
         Transform3d {
             rotate_x: angle(self.rotate_x),
             rotate_y: angle(self.rotate_y),
+            rotate_z: angle(self.rotate_z),
             depth: if self.depth.is_finite() { self.depth.clamp(-10000.0, 10000.0) } else { 0.0 },
             backface: self.backface,
         }
@@ -879,7 +882,7 @@ impl Transform3d {
 
     /// Whether anything is turned (an identity effect draws nothing and takes no room).
     pub fn is_identity(&self) -> bool {
-        self.rotate_x == 0.0 && self.rotate_y == 0.0 && self.depth == 0.0
+        self.rotate_x == 0.0 && self.rotate_y == 0.0 && self.rotate_z == 0.0 && self.depth == 0.0
     }
 }
 

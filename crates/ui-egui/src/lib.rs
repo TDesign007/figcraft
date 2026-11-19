@@ -498,6 +498,15 @@ pub struct UiState {
     pub title_bar: TitleBar,
     /// Every icon on one screen, for reviewing the set (control channel `ui.set {iconGallery}`).
     pub icon_gallery: bool,
+    /// The 3D transform popover: the layer and effect row it edits, and the row's rect (the
+    /// popover opens beside it, on the canvas side). `None` when closed.
+    pub t3_popover: Option<(NodeId, usize, egui::Rect)>,
+    /// The popover has drawn at least once (its opening frame's press is spared).
+    pub t3_popover_shown: bool,
+    /// The popover's preview texture (the cube), keyed by the raster that built it.
+    pub t3_preview: Option<((u64, u32, u32), egui::TextureHandle)>,
+    /// The 3D transform's popover chrome (its placement and size, kept between frames).
+    pub t3_popover_pop: Option<crate::popover::Popover>,
     /// A message at the bottom of the window and how long it has been showing.
     pub toast: Option<(String, ToastClock)>,
     pub present: Option<present::Presenter>,
@@ -702,6 +711,10 @@ impl Default for UiState {
             home_view: home::Home::default(),
             title_bar: TitleBar::Native,
             icon_gallery: false,
+            t3_popover: None,
+            t3_popover_shown: false,
+            t3_preview: None,
+            t3_popover_pop: None,
             toast: None,
             present: None,
             presents: Vec::new(),
