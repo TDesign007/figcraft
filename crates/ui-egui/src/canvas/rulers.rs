@@ -80,7 +80,13 @@ pub(super) fn rulers(app: &FigApp, painter: &egui::Painter, t: &Tokens, doc: &Do
     while y <= p1.y {
         let s = app.to_screen(0.0, y).y;
         painter.line_segment([pos2(r.min.x + size - 6.0, s), pos2(r.min.x + size, s)], stroke(t.text_tertiary, 1.0));
-        painter.text(pos2(r.min.x + 3.0, s + 2.0), Align2::LEFT_TOP, fmt(y), regular(9.0), t.text_secondary);
+        // Figma's left ruler reads its numbers from the bottom up: the label turned a quarter
+        // turn, its first character 2 px above the tick, along the strip's inner edge (the top
+        // ruler's own labels start 2 px to the right of their tick the same way).
+        let galley = painter.layout_no_wrap(fmt(y), regular(9.0), t.text_secondary);
+        let mut shape = egui::epaint::TextShape::new(pos2(r.min.x + 2.0, s - 2.0), galley, t.text_secondary);
+        shape.angle = -std::f32::consts::FRAC_PI_2;
+        painter.add(shape);
         y += step;
     }
     painter.line_segment([pos2(r.min.x, r.min.y + size), pos2(r.max.x, r.min.y + size)], stroke(t.border, 1.0));

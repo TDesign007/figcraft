@@ -365,6 +365,7 @@ Ranked; detail and milestones in [`docs/roadmap.md`](docs/roadmap.md).
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-11-20 | minor | The left ruler's numbers read from the bottom up, as Figma's ruler does: the label turned a quarter turn (`TextShape::angle`), its first character 2 px above the tick along the strip's inner edge, where the top ruler's labels start 2 px to the right of their tick. Tests unchanged; verified on the dev build's rulers |
 | 2026-11-17 | minor | M6: Android Vector Drawable XML serialization uses the shared writer; application projection and colour policy remain local. Byte-parity tests cover full documents and generated deep wrappers; no new format capability or incumbent certification. |
 | 2026-11-15 | patch | CLI usage and operation failures escape terminal controls in paths and error text, using the same printable-text rule as info and script diagnostics; exit codes and ordinary quotes and paths stay unchanged. |
 | 2026-11-10 | minor | M4, #2222: a boolean group takes a corner radius that rounds every sharp corner of its result. Numbers unchanged |
