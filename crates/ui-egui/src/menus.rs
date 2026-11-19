@@ -636,6 +636,11 @@ pub fn popups(app: &mut FigApp, ctx: &egui::Context) {
     if let Some((id, i, at)) = app.ui.t3_popover.clone() {
         let tokens = crate::theme::Tokens::get(ctx);
         crate::panels::right::transform3d::popover(app, ctx, id, i, at, &tokens);
+        if app.ui.t3_settings_open {
+            crate::panels::right::transform3d::settings_popover(app, ctx, id, i, at, &tokens);
+        }
+    } else {
+        app.ui.t3_settings_open = false;
     }
 }
 

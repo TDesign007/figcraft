@@ -79,7 +79,9 @@ pub(crate) fn popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId, i: usiz
     let held = row_rect;
     let mut pop = app.ui.t3_popover_pop.take().unwrap_or_else(|| Popover::with_id(Id::unique("t3_popover"), tr("3D transform")).at(at).pad(10.0));
     pop = pop.close_on_outside(true);
-    let closed = pop.show(ctx, crate::popover::Open::At(at), crate::popover::Hold { rects: std::slice::from_ref(&held), escape: false }, |ui| {
+    let mut hold: Vec<egui::Rect> = vec![held];
+    hold.extend(app.ui.t3_settings_rect);
+    let closed = pop.show(ctx, crate::popover::Open::At(at), crate::popover::Hold { rects: &hold, escape: false }, |ui| {
                     ui.set_width(WIDTH - 16.0);
                     // The header: the effect's mark, the layer's name, the pivot picker (⊕), the
                     // close (the Popover's own header carries the title and the X).
@@ -90,6 +92,10 @@ pub(crate) fn popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId, i: usiz
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if icons::button(ui, Icon::Close, 24.0, false, tr("Close")).clicked() {
                                 app.ui.t3_popover = None;
+                            }
+                            // The settings popover: the backface toggle.
+                            if icons::button(ui, Icon::Adjust, 24.0, app.ui.t3_settings_open, tr("Settings")).clicked() {
+                                app.ui.t3_settings_open = !app.ui.t3_settings_open;
                             }
                             // The pivot picker: nine preset points, the fields for a precise one.
                             if icons::button(ui, Icon::Effects, 24.0, app.ui.t3_origin_open, tr("Rotation point")).clicked() {
@@ -304,6 +310,89 @@ fn tweaked_effect(e: Effect, f: impl FnOnce(&mut Transform3d)) -> Effect {
         f(t2);
     }
     e2
+}
+
+/// The settings popover, on the canvas side of the main one and top-aligned with it: the
+/// backface toggle, Figma's two-segment switch — "—" hides the mirrored back, "✓" shows it.
+pub(crate) fn settings_popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId, i: usize, row_rect: egui::Rect, t: &Tokens) {
+    // The effect must still be there (the popover closes with what it edits).
+    let Some(e) = app
+        .session
+        .doc()
+        .ok()
+        .and_then(|doc| doc.node(id))
+        .and_then(|n| n.effects.get(i).cloned())
+        .filter(|e| e.visible && matches!(e.kind, EffectKind::Transform3d(_)))
+    else {
+        app.ui.t3_settings_open = false;
+        return;
+    };
+    let backface = matches!(&e.kind, EffectKind::Transform3d(t) if t.backface);
+    let settings_w = 250.0;
+    // To the LEFT of the main popover, its top on the main one's top (the main one sits on the
+    // canvas side of the row, lifted to stay inside the window).
+    let screen_h = ctx.content_rect().height();
+    let main_at = Pos2::new(
+        (row_rect.left() - 254.0 - 8.0).max(8.0),
+        row_rect.top().max(8.0).min((screen_h - 380.0).max(8.0)),
+    );
+    let at = Pos2::new((main_at.x - settings_w - 8.0).max(8.0), main_at.y.max(8.0));
+    let mut pop = app
+        .ui
+        .t3_settings_pop
+        .take()
+        .unwrap_or_else(|| Popover::with_id(Id::unique("t3_settings"), tr("Settings")).at(at).pad(10.0));
+    pop = pop.close_on_outside(true);
+    let closed = pop.show(ctx, crate::popover::Open::At(at), crate::popover::Hold { rects: &[], escape: false }, |ui| {
+        ui.set_width(settings_w - 20.0);
+        row(ui, 36.0, |ui| {
+            // The label.
+            let label = ui.painter().layout_no_wrap(tr("Backface").to_string(), regular(12.0), t.menu_text);
+            let cy = ui.cursor().center().y - label.size().y / 2.0;
+            ui.painter().galley(pos2(ui.cursor().min.x + 2.0, cy), label, t.menu_text);
+            ui.add_space(96.0);
+            // Figma's two-segment switch: "—" (the back hidden) and "✓" (shown), the picked
+            // segment filled and outlined.
+            let seg_w = 74.0;
+            let seg_h = 34.0;
+            let (box_rect, _) = ui.allocate_exact_size(vec2(seg_w * 2.0, seg_h), Sense::click());
+            ui.painter().rect_stroke(box_rect, CornerRadius::same(6), Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
+            let halves = [
+                (Rect::from_min_size(box_rect.min, vec2(seg_w, seg_h)), false, false),
+                (Rect::from_min_size(pos2(box_rect.min.x + seg_w, box_rect.min.y), vec2(seg_w, seg_h)), true, true),
+            ];
+            for (half, shows, _is_right) in halves {
+                let active = backface == shows;
+                let resp = ui.interact(half, Id::unique(("t3_backface", shows)), Sense::click());
+                if active {
+                    ui.painter().rect_filled(half.shrink(2.0), CornerRadius::same(5), t.field);
+                    ui.painter().rect_stroke(half.shrink(2.0), CornerRadius::same(5), Stroke::new(1.0, t.field_hover_border), egui::StrokeKind::Inside);
+                } else if resp.hovered() {
+                    ui.painter().rect_filled(half.shrink(2.0), CornerRadius::same(5), t.hover);
+                }
+                let col = if active { t.menu_text } else { t.icon_secondary };
+                if shows {
+                    icons::paint(ui.painter(), Rect::from_center_size(half.center(), Vec2::splat(16.0)), Icon::Check, col);
+                } else {
+                    let c = half.center();
+                    ui.painter().line_segment([pos2(c.x - 7.0, c.y), pos2(c.x + 7.0, c.y)], Stroke::new(1.5, col));
+                }
+                if resp.clicked() && !active {
+                    let mut e2 = e.clone();
+                    if let EffectKind::Transform3d(t2) = &mut e2.kind {
+                        t2.backface = shows;
+                    }
+                    t3_set(app, &[id], i, e2, None);
+                }
+            }
+        });
+        ui.add_space(4.0);
+        app.ui.t3_settings_rect = Some(ui.min_rect().expand(12.0));
+    });
+    app.ui.t3_settings_pop = Some(pop);
+    if closed {
+        app.ui.t3_settings_open = false;
+    }
 }
 
 /// A small isometric-ish cube, the header's mark.

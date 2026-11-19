@@ -505,10 +505,17 @@ pub struct UiState {
     pub t3_popover_shown: bool,
     /// The 3D transform popover's pivot picker (the nine points) is open.
     pub t3_origin_open: bool,
+    /// The 3D transform popover's settings popover (the backface toggle) is open.
+    pub t3_settings_open: bool,
     /// The popover's preview texture (the cube), keyed by the raster that built it.
     pub t3_preview: Option<((u64, u32, u32), egui::TextureHandle)>,
     /// The 3D transform's popover chrome (its placement and size, kept between frames).
     pub t3_popover_pop: Option<crate::popover::Popover>,
+    /// The settings popover's chrome.
+    pub t3_settings_pop: Option<crate::popover::Popover>,
+    /// The settings popover's panel rect (the main popover holds it open while a press lands in
+    /// there).
+    pub t3_settings_rect: Option<egui::Rect>,
     /// A message at the bottom of the window and how long it has been showing.
     pub toast: Option<(String, ToastClock)>,
     pub present: Option<present::Presenter>,
@@ -716,8 +723,11 @@ impl Default for UiState {
             t3_popover: None,
             t3_popover_shown: false,
             t3_origin_open: false,
+            t3_settings_open: false,
             t3_preview: None,
             t3_popover_pop: None,
+            t3_settings_pop: None,
+            t3_settings_rect: None,
             toast: None,
             present: None,
             presents: Vec::new(),

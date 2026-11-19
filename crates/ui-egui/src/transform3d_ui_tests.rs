@@ -133,3 +133,49 @@ fn clicking_the_row_dropdown_opens_the_popover() {
     u.frame(vec![]);
     assert!(u.app.ui.t3_popover.is_none(), "the second click closes it");
 }
+
+#[test]
+fn the_settings_popover_shows_the_backface_toggle() {
+    let (mut u, r) = rect_with_effect(&json!({"type": "transform3d", "rotateX": 10.0}));
+    u.app.ui.t3_popover = Some((r, 0, row_rect()));
+    u.frame(vec![]);
+    u.app.ui.t3_settings_open = true;
+    u.frame(vec![]);
+    u.frame(vec![]);
+    let shapes = flat(&u.frame_output(vec![]).shapes);
+    assert!(has_text(&shapes, "Settings"), "the settings popover's title");
+    assert!(has_text(&shapes, "Backface"), "the backface row");
+}
+
+#[test]
+fn the_backface_segments_toggle_the_setting() {
+    let (mut u, r) = rect_with_effect(&json!({"type": "transform3d", "rotateX": 10.0}));
+    u.app.ui.t3_popover = Some((r, 0, row_rect()));
+    u.app.ui.t3_settings_open = true;
+    u.frame(vec![]);
+    u.frame(vec![]);
+    u.frame(vec![]);
+    // The two segments: the ✓ (shown, the default) on the right half of the switch, the — on the
+    // left. Their rects from the switch's own ids.
+    let on = u.ctx.read_response(egui::Id::unique(("t3_backface", true))).map(|r| r.rect).unwrap_or_else(|| panic!("the ✓ segment"));
+    let off = u.ctx.read_response(egui::Id::unique(("t3_backface", false))).map(|r| r.rect).unwrap_or_else(|| panic!("the — segment"));
+    let press = |p: Pos2, pressed: bool| egui::Event::PointerButton { pos: p, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+    // Picking "—" hides the back.
+    let at = off.center();
+    u.frame(vec![egui::Event::PointerMoved(at)]);
+    u.frame(vec![press(at, true)]);
+    u.frame(vec![press(at, false)]);
+    u.frame(vec![]);
+    let n = u.app.session.doc().unwrap().node(r).unwrap().clone();
+    let figcraft_doc::EffectKind::Transform3d(t) = &n.effects[0].kind else { panic!("no turn") };
+    assert!(!t.backface, "the — segment hides the back");
+    // Picking "✓" shows it again.
+    let at = on.center();
+    u.frame(vec![egui::Event::PointerMoved(at)]);
+    u.frame(vec![press(at, true)]);
+    u.frame(vec![press(at, false)]);
+    u.frame(vec![]);
+    let n = u.app.session.doc().unwrap().node(r).unwrap().clone();
+    let figcraft_doc::EffectKind::Transform3d(t) = &n.effects[0].kind else { panic!("no turn") };
+    assert!(t.backface, "the ✓ segment shows the back");
+}
