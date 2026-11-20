@@ -359,7 +359,9 @@ pub fn draw(app: &FigApp, painter: &egui::Painter) {
         let line = segment(app, &g, r);
         let hovered = hover == Some(g);
         let picked = selected == Some((g.owner, g.index));
-        painter.line_segment(line, Stroke::new(if hovered || picked { 2.0 } else { 1.0 }, GUIDE));
+        // The line where the guide belongs never changes on hover (no thickening): only its part
+        // past the frame appears, dashed.
+        painter.line_segment(line, Stroke::new(1.0, GUIDE));
         if hovered {
             // Past the frame: nothing when idle, dashed on hover.
             for seg in beyond(line, r).into_iter().flatten() {

@@ -76,10 +76,15 @@ fn a_guide_moved_off_the_canvas_doesnt_follow_a_later_click() {
 
 /// The guide-coloured line segments in `shapes`.
 fn guide_segments(shapes: &[egui::Shape]) -> Vec<[Pos2; 2]> {
+    guide_segments_width(shapes).into_iter().map(|(p, _)| p).collect()
+}
+
+/// The guide-coloured line segments with their stroke widths.
+fn guide_segments_width(shapes: &[egui::Shape]) -> Vec<([Pos2; 2], f32)> {
     shapes
         .iter()
         .filter_map(|s| match s {
-            Shape::LineSegment { points, stroke } if stroke.color == Color32::from_rgb(0xF2, 0x48, 0x22) => Some(*points),
+            Shape::LineSegment { points, stroke } if stroke.color == Color32::from_rgb(0xF2, 0x48, 0x22) => Some((*points, stroke.width)),
             _ => None,
         })
         .collect()
@@ -121,11 +126,17 @@ fn a_guide_dragged_into_a_frame_is_solid_inside_and_dashed_past_it() {
     let kept = row(&shapes);
     assert!(kept.iter().all(|[a, b]| a.x.min(b.x) >= fl - 1.0 && a.x.max(b.x) <= fr + 1.0), "nothing outside the frame: {kept:?}");
     assert!(kept.iter().any(|[a, b]| (a.x - b.x).abs() > 50.0), "the solid guide is drawn: {kept:?}");
-    // Hover: the inside stays solid, the outside turns dashed again.
+    // Hover: the inside stays solid — same width, not thickened — and the outside turns dashed.
     u.frame(vec![Event::PointerMoved(Pos2::new(inside.x, inside.y + 1.0))]);
     let shapes = flat(&u.frame_output(vec![]).shapes);
     let hovered = row(&shapes);
     assert!(hovered.iter().any(|[a, b]| (a.x - b.x).abs() > 50.0), "the solid part stays: {hovered:?}");
+    let widths: Vec<f32> = guide_segments_width(&shapes)
+        .into_iter()
+        .filter(|([a, b], _)| (a.y - b.y).abs() < 0.5 && (a.y - inside.y).abs() < 1.5 && (a.x - b.x).abs() > 50.0)
+        .map(|(_, w)| w)
+        .collect();
+    assert!(widths.iter().all(|w| (*w - 1.0).abs() < 0.01), "the inside line keeps its 1 pt width on hover: {widths:?}");
     let left = hovered.iter().filter(|[a, b]| a.x.max(b.x) < fl - 1.0).count();
     let right = hovered.iter().filter(|[a, b]| a.x.min(b.x) > fr + 1.0).count();
     assert!(left > 2 && right > 2, "hover dashes the parts outside the frame: left {left}, right {right}");
