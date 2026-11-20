@@ -1192,6 +1192,28 @@ fn ui_set_view(app: &mut FigApp, ctx: &Context, p: &Value) -> Result<(), String>
         }
         _ => {}
     }
+    // The 3D transform's popover (and its settings popover), for agents driving the live window
+    // without hunting pixels: `{"t3Popover": {"id": 2, "index": 0}}`, null to close;
+    // `{"t3Settings": true}` opens/closes the secondary popover (it needs the main one).
+    match p.get("t3Popover") {
+        Some(Value::Null) => {
+            app.ui.t3_popover = None;
+            app.ui.t3_settings_open = false;
+        }
+        Some(v) => {
+            let id = v.get("id").and_then(figcraft_engine::params::id_of).ok_or("`t3Popover.id` required")?;
+            let index = v.get("index").and_then(Value::as_u64).unwrap_or(0) as usize;
+            // The row's place: as the anchor, the panel's left edge at the top of the property
+            // rows; the popover's own placement lifts it inside the window.
+            let panel_left = app.ui.right_panel_rect.map(|r| r.left()).unwrap_or(0.0);
+            let row = egui::Rect::from_min_size(egui::pos2(panel_left, 120.0), egui::vec2(150.0, 30.0));
+            app.ui.t3_popover = Some((id, index, row));
+        }
+        None => {}
+    }
+    if let Some(open) = p.get("t3Settings").and_then(Value::as_bool) {
+        app.ui.t3_settings_open = open;
+    }
     Ok(())
 }
 

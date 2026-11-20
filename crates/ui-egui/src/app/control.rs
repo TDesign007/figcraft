@@ -111,6 +111,13 @@ impl FigApp {
         state["missingFonts"] = json!(self.ui.missing_fonts.as_ref().map(missing_fonts::Shown::inspect));
         state["presentTabs"] = tabs::present_tabs_inspect(self);
         state["frameTimes"] = self.frame_stats.times();
+        // The 3D transform's popover and its settings popover, as the live agent loop sees them.
+        state["t3"] = json!({
+            "open": self.ui.t3_popover.is_some(),
+            "settings": self.ui.t3_settings_open,
+            "mainRect": self.ui.t3_popover_pop.as_ref().map(|p| [p.rect.min.x, p.rect.min.y, p.rect.max.x, p.rect.max.y]),
+            "settingsRect": self.ui.t3_settings_pop.as_ref().map(|p| [p.rect.min.x, p.rect.min.y, p.rect.max.x, p.rect.max.y]),
+        });
         state
     }
 }

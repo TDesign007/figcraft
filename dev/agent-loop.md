@@ -35,8 +35,12 @@ Figcraft/dev/figctl rclick 400 550      # 右键开上下文菜单
 Figcraft/dev/figctl click 312 46        # 点菜单行
 
 # 6. 读状态（数值级核对）
-Figcraft/dev/figctl inspect             # 全量 UI/文档状态 JSON
-Figcraft/dev/figctl run get_node '{"id":2}'
+Figcraft/dev/figctl inspect             # 全量 UI/文档状态 JSON（含 t3 弹窗开合与 rect）
+Figcraft/dev/figctl run node.get '{"id":2}'
+
+# 7. 直接打开浮窗（免去像素找控件；选中 3D transform 效果后）
+Figcraft/dev/figctl exec ui.set '{"t3Popover":{"id":2,"index":0}}'   # null 关闭
+Figcraft/dev/figctl exec ui.set '{"t3Settings":true}'                # 主浮窗需已打开
 ```
 
 ## 坐标换算（重要）
