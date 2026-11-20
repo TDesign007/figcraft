@@ -76,10 +76,9 @@ pub(crate) fn popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId, i: usiz
     // Fully on the canvas, to the left of the right panel (never over the panel or the row);
     // lifted to stay inside the window when the row is near its bottom.
     let panel_left = app.ui.right_panel_rect.map(|r| r.left()).unwrap_or(row_rect.left());
-    let tall = 430.0 + if app.ui.t3_origin_open { 140.0 } else { 0.0 };
     let at = Pos2::new(
         (panel_left - WIDTH - 8.0).max(8.0),
-        row_rect.top().max(8.0).min((screen_h - tall).max(8.0)),
+        row_rect.top().max(8.0).min((screen_h - 430.0).max(8.0)),
     );
     let held = row_rect;
     let mut pop = app
@@ -91,6 +90,7 @@ pub(crate) fn popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId, i: usiz
     pop = pop.at(at).close_on_outside(true);
     let mut hold: Vec<egui::Rect> = vec![held];
     hold.extend(app.ui.t3_settings_rect);
+    hold.extend(app.ui.t3_pivot_rect);
     let closed = pop.show(ctx, crate::popover::Open::At(at), crate::popover::Hold { rects: &hold, escape: false }, |ui| {
                     ui.set_width(WIDTH - 20.0);
                     // One header row, as the target app's: the effect's mark and title, the
@@ -146,18 +146,13 @@ pub(crate) fn popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId, i: usiz
                         app.ui.t3_settings_open = !app.ui.t3_settings_open;
                     }
                     let pivot_rect = icon_at(2);
+                    app.ui.t3_pivot_btn_rect = Some(pivot_rect);
                     if icon_btn(ui, pivot_rect, app.ui.t3_origin_open, Id::unique("t3_pivot_btn"), tr("Rotation point"), &|p| {
                         crosshair(p, pivot_rect.center(), t.icon);
                     }) {
                         app.ui.t3_origin_open = !app.ui.t3_origin_open;
                     }
                     ui.add_space(4.0);
-                    // The pivot picker's panel: the nine points on the layer, the precise X/Y.
-                    if app.ui.t3_origin_open {
-                        origin_panel(app, ui, &ids, i, t, &t3);
-                        ui.add_space(4.0);
-                    }
-                    ui.add_space(2.0);
                     // The preview: the turned slab, dragged to turn it in real time, with a reset.
                     let (_, prect) = ui.allocate_space(vec2(WIDTH - 20.0, PREVIEW_H));
                     app.ui.t3_preview_rect = Some(prect);
@@ -286,10 +281,11 @@ fn label_at(ui: &mut egui::Ui, t: &Tokens, label: &str, inset: f32) {
 /// midpoints, the centre), the centre picked by default, and the precise X/Y in the layer's
 /// percent. A click on a point (or a field edit) moves the turn's pivot through `effect.set`.
 fn origin_panel(app: &mut FigApp, ui: &mut egui::Ui, ids: &[NodeId], i: usize, t: &Tokens, t3: &Transform3d) {
-    let panel_w = WIDTH - 20.0;
+    let panel_w = ui.available_width();
     let grid_h = 96.0;
     let (rect, resp) = ui.allocate_exact_size(vec2(panel_w, grid_h), Sense::click());
-    ui.painter().rect_filled(rect, CornerRadius::same(8), t.panel);
+    // The grid's well: the field fill reads on the light and the dark popover alike.
+    ui.painter().rect_filled(rect, CornerRadius::same(8), t.field);
     // The nine points, the picked one a blue rounded square (the centre by default).
     let origin = t3.sanitized().origin;
     let picked = |col: usize, row: usize| ((col * 50) as f64 - origin.0).abs() < 1.0 && ((row * 50) as f64 - origin.1).abs() < 1.0;
@@ -413,6 +409,7 @@ pub(crate) fn settings_popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId
     pop = pop.at(at).close_on_outside(true);
     let mut hold: Vec<Rect> = app.ui.t3_settings_btn_rect.into_iter().collect();
     hold.extend(app.ui.t3_popover_pop.as_ref().map(|p| p.rect));
+    hold.extend(app.ui.t3_pivot_rect);
     let mut close_rect = Rect::NOTHING;
     let closed = pop.show(ctx, crate::popover::Open::At(at), crate::popover::Hold { rects: &hold, escape: false }, |ui| {
         ui.set_width(settings_w - 20.0);
@@ -487,6 +484,67 @@ pub(crate) fn settings_popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId
     app.ui.t3_settings_pop = Some(pop);
     if closed {
         app.ui.t3_settings_open = false;
+    }
+}
+
+/// The pivot picker's own popover: a small floating panel left of the main one (left of Settings
+/// when that is open too), top-aligned with it — the nine preset points on the layer and the
+/// precise X/Y in the layer's percent. It never expands the main popover.
+pub(crate) fn pivot_popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId, i: usize, row_rect: egui::Rect, t: &Tokens) {
+    // The effect must still be there (the picker closes with what it edits).
+    let Some(e) = app
+        .session
+        .doc()
+        .ok()
+        .and_then(|doc| doc.node(id))
+        .and_then(|n| n.effects.get(i).cloned())
+        .filter(|e| e.visible && matches!(e.kind, EffectKind::Transform3d(_)))
+    else {
+        app.ui.t3_origin_open = false;
+        return;
+    };
+    let t3 = match &e.kind {
+        EffectKind::Transform3d(t) => t.clone(),
+        _ => return,
+    };
+    let pivot_w = 230.0;
+    // The chain: the main popover on the canvas side of the row, Settings just left of it, this
+    // picker left of whichever of the two is open (so all three stay side by side).
+    let screen_h = ctx.content_rect().height();
+    let panel_left = app.ui.right_panel_rect.map(|r| r.left()).unwrap_or(row_rect.left());
+    let main_at = Pos2::new(
+        (panel_left - WIDTH - 8.0).max(8.0),
+        row_rect.top().max(8.0).min((screen_h - 430.0).max(8.0)),
+    );
+    let main_live = app.ui.t3_popover_pop.as_ref().filter(|p| p.rect.is_positive()).map(|p| p.rect);
+    let inner_left = app
+        .ui
+        .t3_settings_pop
+        .as_ref()
+        .filter(|p| p.rect.is_positive())
+        .map(|p| p.rect.left())
+        .or_else(|| main_live.map(|r| r.left()))
+        .unwrap_or(main_at.x);
+    // Top-aligned with the main popover's settled rect (its own clamp may have lifted it).
+    let at = Pos2::new((inner_left - pivot_w - 8.0).max(8.0), main_live.map(|r| r.top()).unwrap_or(main_at.y));
+    let mut pop = app
+        .ui
+        .t3_pivot_pop
+        .take()
+        .unwrap_or_else(|| Popover::with_id(Id::unique("t3_pivot"), tr("Rotation point")).width(pivot_w).pad(10.0).no_header());
+    pop = pop.at(at).close_on_outside(true);
+    let mut hold: Vec<Rect> = app.ui.t3_pivot_btn_rect.into_iter().collect();
+    hold.extend(app.ui.t3_popover_pop.as_ref().map(|p| p.rect));
+    hold.extend(app.ui.t3_settings_pop.as_ref().map(|p| p.rect));
+    let closed = pop.show(ctx, crate::popover::Open::At(at), crate::popover::Hold { rects: &hold, escape: false }, |ui| {
+        ui.set_width(pivot_w - 20.0);
+        origin_panel(app, ui, &[id], i, t, &t3);
+        ui.add_space(4.0);
+        app.ui.t3_pivot_rect = Some(ui.min_rect().expand(12.0));
+    });
+    app.ui.t3_pivot_pop = Some(pop);
+    if closed {
+        app.ui.t3_origin_open = false;
     }
 }
 

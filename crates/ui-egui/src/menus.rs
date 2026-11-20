@@ -639,8 +639,12 @@ pub fn popups(app: &mut FigApp, ctx: &egui::Context) {
         if app.ui.t3_settings_open {
             crate::panels::right::transform3d::settings_popover(app, ctx, id, i, at, &tokens);
         }
+        if app.ui.t3_origin_open {
+            crate::panels::right::transform3d::pivot_popover(app, ctx, id, i, at, &tokens);
+        }
     } else {
         app.ui.t3_settings_open = false;
+        app.ui.t3_origin_open = false;
     }
 }
 

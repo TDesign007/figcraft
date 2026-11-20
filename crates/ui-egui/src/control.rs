@@ -1214,6 +1214,9 @@ fn ui_set_view(app: &mut FigApp, ctx: &Context, p: &Value) -> Result<(), String>
     if let Some(open) = p.get("t3Settings").and_then(Value::as_bool) {
         app.ui.t3_settings_open = open;
     }
+    if let Some(open) = p.get("t3Pivot").and_then(Value::as_bool) {
+        app.ui.t3_origin_open = open;
+    }
     Ok(())
 }
 

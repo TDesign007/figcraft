@@ -505,6 +505,12 @@ pub struct UiState {
     pub t3_popover_shown: bool,
     /// The 3D transform popover's pivot picker (the nine points) is open.
     pub t3_origin_open: bool,
+    /// The pivot picker's own popover chrome (a floating panel beside the main one).
+    pub t3_pivot_pop: Option<crate::popover::Popover>,
+    /// The pivot picker's panel rect, as drawn last frame (the other popovers hold it open).
+    pub t3_pivot_rect: Option<egui::Rect>,
+    /// The header's pivot (crosshair) button rect, as drawn last frame.
+    pub t3_pivot_btn_rect: Option<egui::Rect>,
     /// The 3D transform popover's settings popover (the backface toggle) is open.
     pub t3_settings_open: bool,
     /// The popover's preview texture (the cube), keyed by the raster that built it.
@@ -729,6 +735,9 @@ impl Default for UiState {
             t3_popover: None,
             t3_popover_shown: false,
             t3_origin_open: false,
+            t3_pivot_pop: None,
+            t3_pivot_rect: None,
+            t3_pivot_btn_rect: None,
             t3_settings_open: false,
             t3_preview: None,
             t3_popover_pop: None,

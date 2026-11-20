@@ -186,6 +186,39 @@ fn the_more_button_opens_a_readable_backface_popover() {
 }
 
 #[test]
+fn the_pivot_picker_is_its_own_popover() {
+    let (mut u, r) = rect_with_effect(&json!({"type": "transform3d", "rotateX": 10.0, "rotateY": 20.0}));
+    u.app.ui.t3_popover = Some((r, 0, row_rect()));
+    for _ in 0..3 {
+        u.frame(vec![]);
+    }
+    let main_h = u.app.ui.t3_popover_pop.as_ref().unwrap().rect.height();
+    // The header's crosshair (⊕).
+    let button = u.app.ui.t3_pivot_btn_rect.unwrap().center();
+    u.button(button, true);
+    u.button(button, false);
+    for _ in 0..3 {
+        u.frame(vec![]);
+    }
+    assert!(u.app.ui.t3_origin_open, "the crosshair opens the picker");
+    let main = u.app.ui.t3_popover_pop.as_ref().unwrap().rect;
+    let pivot = u.app.ui.t3_pivot_pop.as_ref().unwrap().rect;
+    assert!(pivot.is_positive(), "the picker is drawn: {pivot:?}");
+    assert!(pivot.right() <= main.left(), "its own popover, left of the main one: {pivot:?} vs {main:?}");
+    assert!((pivot.top() - main.top()).abs() < 1.0, "top-aligned with the main popover");
+    assert!((main.height() - main_h).abs() < 1.0, "the main popover does not expand for it");
+    // The nine points: the top-left one sets the origin to the layer's 0%, 0%.
+    let grid = Rect::from_min_size(pivot.min + egui::vec2(10.0, 10.0), egui::vec2(pivot.width() - 20.0, 96.0));
+    let at = Pos2::new(grid.min.x + 24.0, grid.min.y + 18.0);
+    u.button(at, true);
+    u.button(at, false);
+    u.frame(vec![]);
+    let n = u.app.session.doc().unwrap().node(r).unwrap().clone();
+    let figcraft_doc::EffectKind::Transform3d(t) = &n.effects[0].kind else { panic!("no turn") };
+    assert_eq!(t.origin, (0.0, 0.0), "the top-left point is picked");
+}
+
+#[test]
 fn the_backface_segments_toggle_the_setting() {
     let (mut u, r) = rect_with_effect(&json!({"type": "transform3d", "rotateX": 10.0}));
     u.app.ui.t3_popover = Some((r, 0, row_rect()));
