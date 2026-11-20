@@ -109,6 +109,16 @@ fn the_popover_header_reads_on_the_light_panel() {
         })
         .expect("the popover's title is drawn");
     assert_eq!(title.fallback_color, tokens.text, "the header's title reads on the light panel");
+    // The title's text style is the effect names' (the panel row's): same weight, size, family.
+    let row = shapes
+        .iter()
+        .find_map(|shape| match shape {
+            Shape::Text(t) if t.galley.text() == "3D transform" && !panel.contains(t.pos) => Some(t),
+            _ => None,
+        })
+        .expect("the effect row's label is drawn");
+    let font = |t: &egui::epaint::TextShape| t.galley.job.sections.first().map(|s| s.format.font_id.clone());
+    assert_eq!(font(title), font(row), "the header title matches the effect label's font");
     // The title and the header's icons share one horizontal centre line (the mark too: it is
     // allocated in the same centred row).
     let icons = u.app.ui.t3_pivot_btn_rect.unwrap().center().y;

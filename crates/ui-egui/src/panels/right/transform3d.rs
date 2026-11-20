@@ -105,7 +105,9 @@ pub(crate) fn popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId, i: usiz
                         ui.add_space(6.0);
                         // The title centres on the row like the icon and the header's buttons: its own height
 // allocated through the row's centred layout (painted at the cursor's top it sat high).
-                        let title = ui.painter().layout_no_wrap(tr("3D transform").to_string(), semibold(12.0), t.text);
+                        // The same text style as the effect names in the list (the dropdown's
+                        // regular 11): weight, size and family match them exactly.
+                        let title = ui.painter().layout_no_wrap(tr("3D transform").to_string(), regular(11.0), t.text);
                         let (title_rect, _) = ui.allocate_exact_size(title.size(), Sense::hover());
                         ui.painter().galley(title_rect.min, title, t.text);
                         ui.add_space(6.0);
