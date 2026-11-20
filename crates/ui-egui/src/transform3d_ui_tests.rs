@@ -204,8 +204,8 @@ fn the_pivot_picker_is_its_own_popover() {
     let main = u.app.ui.t3_popover_pop.as_ref().unwrap().rect;
     let pivot = u.app.ui.t3_pivot_pop.as_ref().unwrap().rect;
     assert!(pivot.is_positive(), "the picker is drawn: {pivot:?}");
-    assert!(pivot.right() <= main.left(), "its own popover, left of the main one: {pivot:?} vs {main:?}");
-    assert!((pivot.top() - main.top()).abs() < 1.0, "top-aligned with the main popover");
+    assert!(pivot.bottom() <= main.top(), "its own popover, above the main one: {pivot:?} vs {main:?}");
+    assert!((pivot.center().x - main.center().x).abs() < 1.0, "centred over the main popover");
     assert!((main.height() - main_h).abs() < 1.0, "the main popover does not expand for it");
     // The nine points: the top-left one sets the origin to the layer's 0%, 0%.
     let grid = Rect::from_min_size(pivot.min + egui::vec2(10.0, 10.0), egui::vec2(pivot.width() - 20.0, 96.0));

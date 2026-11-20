@@ -487,9 +487,9 @@ pub(crate) fn settings_popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId
     }
 }
 
-/// The pivot picker's own popover: a small floating panel left of the main one (left of Settings
-/// when that is open too), top-aligned with it — the nine preset points on the layer and the
-/// precise X/Y in the layer's percent. It never expands the main popover.
+/// The pivot picker's own popover: a small floating panel **above** the main one, centred on it —
+/// the nine preset points on the layer and the precise X/Y in the layer's percent. It never
+/// expands the main popover; when there is no room above, it opens under the main one instead.
 pub(crate) fn pivot_popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId, i: usize, row_rect: egui::Rect, t: &Tokens) {
     // The effect must still be there (the picker closes with what it edits).
     let Some(e) = app
@@ -508,25 +508,34 @@ pub(crate) fn pivot_popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId, i
         _ => return,
     };
     let pivot_w = 230.0;
-    // The chain: the main popover on the canvas side of the row, Settings just left of it, this
-    // picker left of whichever of the two is open (so all three stay side by side).
-    let screen_h = ctx.content_rect().height();
+    // Above the main popover, its centre on the main one's: the picker floats over the canvas
+    // there, clear of the effect rows and the Settings panel (which sits to the main one's left).
+    let screen = ctx.content_rect();
     let panel_left = app.ui.right_panel_rect.map(|r| r.left()).unwrap_or(row_rect.left());
     let main_at = Pos2::new(
         (panel_left - WIDTH - 8.0).max(8.0),
-        row_rect.top().max(8.0).min((screen_h - 430.0).max(8.0)),
+        row_rect.top().max(8.0).min((screen.height() - 430.0).max(8.0)),
     );
     let main_live = app.ui.t3_popover_pop.as_ref().filter(|p| p.rect.is_positive()).map(|p| p.rect);
-    let inner_left = app
+    let (main_left, main_top, main_bottom) =
+        main_live.map(|r| (r.left(), r.top(), r.bottom())).unwrap_or((main_at.x, main_at.y, main_at.y + 430.0));
+    // The picker's height as laid out last frame (the first frame paints invisibly before it
+    // knows its size; the grid and the two fields settle at about 150).
+    let pivot_h = app
         .ui
-        .t3_settings_pop
+        .t3_pivot_pop
         .as_ref()
         .filter(|p| p.rect.is_positive())
-        .map(|p| p.rect.left())
-        .or_else(|| main_live.map(|r| r.left()))
-        .unwrap_or(main_at.x);
-    // Top-aligned with the main popover's settled rect (its own clamp may have lifted it).
-    let at = Pos2::new((inner_left - pivot_w - 8.0).max(8.0), main_live.map(|r| r.top()).unwrap_or(main_at.y));
+        .map(|p| p.rect.height())
+        .unwrap_or(150.0);
+    let x = main_left + (WIDTH - pivot_w) / 2.0;
+    let above = main_top - pivot_h - 8.0;
+    let at = if above >= screen.min.y + 8.0 {
+        Pos2::new(x, above)
+    } else {
+        // No room above (the main popover sits near the window's top): under it instead.
+        Pos2::new(x, main_bottom + 8.0)
+    };
     let mut pop = app
         .ui
         .t3_pivot_pop

@@ -1206,7 +1206,7 @@ fn ui_set_view(app: &mut FigApp, ctx: &Context, p: &Value) -> Result<(), String>
             // The row's place: as the anchor, the panel's left edge at the top of the property
             // rows; the popover's own placement lifts it inside the window.
             let panel_left = app.ui.right_panel_rect.map(|r| r.left()).unwrap_or(0.0);
-            let row = egui::Rect::from_min_size(egui::pos2(panel_left, 120.0), egui::vec2(150.0, 30.0));
+            let row = egui::Rect::from_min_size(egui::pos2(panel_left, 320.0), egui::vec2(150.0, 30.0));
             app.ui.t3_popover = Some((id, index, row));
         }
         None => {}
