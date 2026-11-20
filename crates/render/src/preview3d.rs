@@ -12,9 +12,9 @@ use crate::warp::warp;
 
 /// The camera distance of the preview itself (px): far enough to read as a mild perspective.
 const CAMERA: f64 = 1400.0;
-/// The slab's illustrative thickness when the effect's depth is 0 (the preview always shows a
-/// body, so the third dimension reads even before a depth is set).
-const MIN_THICKNESS: f64 = 70.0;
+/// The slab's illustrative thickness floor when the effect's depth is 0 (the preview always
+/// shows a body, so the third dimension reads even before a depth is set).
+const MIN_THICKNESS: f64 = 48.0;
 
 /// The turned slab of layer `id` drawn into a transparent pixmap of `size` (px, the preview
 /// panel's own pixels).
@@ -27,9 +27,10 @@ pub fn cube(doc: &Document, id: NodeId, size: (u32, u32)) -> Option<Pixmap> {
     }
     let (w, h) = (n.width.max(1.0), n.height.max(1.0));
     let pivot = t3.pivot(w, h);
-    // The thickness: the effect's own depth, at least the illustrative minimum (signed the same
-    // way, so a negative depth's body reaches forward).
-    let thickness = if t3.depth < 0.0 { -(-t3.depth).max(MIN_THICKNESS) } else { t3.depth.max(MIN_THICKNESS) };
+    // The thickness: the effect's own depth, else a share of the layer's smaller side so the
+    // preview reads as a 3D block (a cube for a square layer), signed like the depth.
+    let illustrative = MIN_THICKNESS.max(w.min(h) * 0.6);
+    let thickness = if t3.depth < 0.0 { -(-t3.depth).max(illustrative) } else { t3.depth.max(illustrative) };
     // The plane's homography, about the pivot, in the layer's own coordinates.
     let front = figcraft_doc::transform3d::plane_homography(&t3, pivot, Some(CAMERA));
     let back_t3 = Transform3d { depth: t3.depth - thickness, ..t3.clone() };

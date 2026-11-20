@@ -50,9 +50,10 @@ pub mod widget_bar;
 
 pub struct CanvasState {
     pub rect: Rect,
-    /// The grabbed 3D gizmo ring: the layer, the axis (0: X, 1: Y, 2: Z), the pointer's start
-    /// angle at the pivot and the turn's start value.
-    pub t3_gizmo: Option<(NodeId, usize, f64, f64)>,
+    /// The grabbed 3D gizmo part: the layer, the axis (0: X, 1: Y, 2: Z, 3: the pivot dot,
+    /// 4: the ball's trackball), the pointer's start angle at the pivot, the turn's start value,
+    /// the press position and the second start value (rotate Y, for the trackball).
+    pub t3_gizmo: Option<GizmoGrab>,
     texture: Option<egui::TextureHandle>,
     tex_view: Option<figcraft_render::View>,
     /// The file ([`figcraft_engine::DocState::uid`]) and page the texture shows: it is drawn only
@@ -101,6 +102,17 @@ pub struct CanvasState {
     pressure: Option<f32>,
     /// The latest scroll came from a mouse wheel rather than a trackpad (Scroll wheel zoom).
     wheel_is_mouse: bool,
+}
+
+/// A grabbed 3D gizmo part and the values its drag starts from (see [`CanvasState::t3_gizmo`]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GizmoGrab {
+    pub id: NodeId,
+    pub axis: usize,
+    pub start_angle: f64,
+    pub start_value: f64,
+    pub press: egui::Pos2,
+    pub start_value_b: f64,
 }
 
 impl Default for CanvasState {

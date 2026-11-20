@@ -132,14 +132,14 @@ impl Projector {
     /// The page point of the layer-space point `(x, y, z)`.
     pub fn apply(&self, x: f64, y: f64, z: f64) -> (f64, f64) {
         let (px, py) = self.pivot;
-        // The plane out of the pivot, spun in itself first (as CSS's rotateZ), then turned.
+        // The point out of the pivot, spun in itself first (as CSS's rotateZ), then turned. The
+        // Y and X turns mix z into x and y, so off-plane points (the gizmo's rings) turn right.
         let (x0, y0) = ((x - px) * self.cz - (y - py) * self.sz, (x - px) * self.sz + (y - py) * self.cz);
-        let x1 = x0 * self.cy;
-        let z1 = -x0 * self.sy;
-        let y1 = y0;
-        let y2 = y1 * self.cx - z1 * self.sx;
-        let z2 = y1 * self.sx + z1 * self.cx;
-        let z3 = z2 + z + self.depth;
+        let x1 = x0 * self.cy + z * self.sy;
+        let z1 = -x0 * self.sy + z * self.cy;
+        let y2 = y0 * self.cx - z1 * self.sx;
+        let z2 = y0 * self.sx + z1 * self.cx;
+        let z3 = z2 + self.depth;
         // The camera's divide (orthographic without one).
         let (x, y) = match self.d {
             Some(d) if d > 0.0 && (d - z3).abs() > 1e-9 => {
@@ -155,6 +155,24 @@ impl Projector {
     /// The pivot in the layer's own coordinates.
     pub fn pivot(&self) -> (f64, f64) {
         self.pivot
+    }
+
+    /// The turned (pre-camera) coordinates of a layer-space point: `(x, y, z)` after the three
+    /// turns and the depth, before the camera divide. The `z` tells which side of the pivot faces
+    /// the camera (the gizmo's near / far ring halves).
+    pub fn turned(&self, x: f64, y: f64, z: f64) -> (f64, f64, f64) {
+        let (px, py) = self.pivot;
+        let (x0, y0) = ((x - px) * self.cz - (y - py) * self.sz, (x - px) * self.sz + (y - py) * self.cz);
+        let x1 = x0 * self.cy + z * self.sy;
+        let z1 = -x0 * self.sy + z * self.cy;
+        let y2 = y0 * self.cx - z1 * self.sx;
+        let z2 = y0 * self.sx + z1 * self.cx;
+        (x1, y2, z2 + self.depth)
+    }
+
+    /// The pivot's own turned depth (the near / far threshold for the rings).
+    pub fn pivot_depth(&self) -> f64 {
+        self.depth
     }
 
     /// The pivot in page coordinates (the gizmo's centre).

@@ -175,3 +175,29 @@ fn dragging_the_pivot_dot_moves_the_origin() {
     assert!(t.origin.0 > 55.0 && t.origin.1 > 55.0, "the origin moved toward the drag: {:?}", t.origin);
     assert_eq!((t.rotate_x, t.rotate_y), (20.0, 30.0), "the turns stay: the drag moved the pivot, not the turn");
 }
+
+#[test]
+fn dragging_inside_the_ball_free_rotates() {
+    let (mut u, r) = rect_with_effect(&json!({"type": "transform3d", "rotateX": 0.0, "rotateY": 0.0}));
+    u.frame(vec![]);
+    let doc = u.app.session.doc().unwrap().clone();
+    let p = figcraft_doc::transform3d::projector(&doc, r).unwrap();
+    let (px, py) = p.pivot_page();
+    let pivot = u.app.to_screen(px, py);
+    // A point inside the ball but off the rings and the dot: free rotation. (With no turn the
+    // Y ring projects onto the pivot's horizontal line and X's onto its vertical one, so the
+    // quadrant diagonal clears both by more than the grab radius.)
+    let inside = pivot + egui::vec2(14.0, 14.0);
+    let press = |p: Pos2, pressed: bool| egui::Event::PointerButton { pos: p, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+    u.frame(vec![egui::Event::PointerMoved(inside), press(inside, true)]);
+    u.frame(vec![egui::Event::PointerMoved(inside + egui::vec2(20.0, 10.0))]);
+    u.frame(vec![egui::Event::PointerMoved(inside + egui::vec2(40.0, 20.0))]);
+    u.frame(vec![egui::Event::PointerMoved(inside + egui::vec2(40.0, 20.0)), press(inside + egui::vec2(40.0, 20.0), false)]);
+    u.frame(vec![]);
+    let n = u.app.session.doc().unwrap().node(r).unwrap().clone();
+    let figcraft_doc::EffectKind::Transform3d(t) = &n.effects[0].kind else { panic!("no turn") };
+    // The drag's total offset from the press: 40 pt right turns Y by 20°, 20 pt down turns X
+    // by 10° (the accumulation makes a missed frame harmless).
+    assert!((t.rotate_y - 20.0).abs() < 1.0, "horizontal drag turned Y: {}", t.rotate_y);
+    assert!((t.rotate_x - 10.0).abs() < 1.0, "vertical drag turned X: {}", t.rotate_x);
+}
