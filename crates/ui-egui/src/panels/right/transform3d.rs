@@ -173,8 +173,26 @@ pub(crate) fn popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId, i: usiz
                     preview(app, &painter, prect, id, pw(), ph());
                     let reset_rect = Rect::from_min_size(prect.right_bottom() - vec2(30.0, 30.0), vec2(24.0, 24.0));
                     app.ui.t3_reset_rect = Some(reset_rect);
+                    // The preview is a handle: grab it to turn the plane into the 3D model, and its
+                    // centre point — the pivot — is the grab point for the orientation, with a ring
+                    // and a grab cursor (the target app's preview).
+                    let hover = ui.ctx().input(|i| i.pointer.hover_pos());
+                    let over_reset = hover.is_some_and(|p| reset_rect.contains(p));
+                    let over = hover.is_some_and(|p| prect.contains(p)) && !over_reset;
+                    // The dot's real place: the pivot's projection, not necessarily the panel's
+                    // centre once the plane is turned in perspective.
+                    let dot = app.ui.t3_dot_norm.map_or(prect.center(), |n| pos2(prect.min.x + n.x * prect.width(), prect.min.y + n.y * prect.height()));
+                    if over {
+                        ui.ctx().set_cursor_icon(if resp.dragged() { egui::CursorIcon::Grabbing } else { egui::CursorIcon::Grab });
+                    }
+                    if resp.dragged() || (over && hover.is_some_and(|p| p.distance(dot) <= 10.0)) {
+                        ui.painter().circle_stroke(dot, 9.0, Stroke::new(1.0, Color32::from_rgb(0x0D, 0x99, 0xFF).gamma_multiply(0.55)));
+                    }
                     // The reset: an icon button drawn at the preview's bottom-right corner.
                     let rresp = ui.interact(reset_rect, Id::unique("t3_reset"), Sense::click());
+                    if rresp.hovered() {
+                        ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                    }
                     let bg = if rresp.is_pointer_button_down_on() {
                         t.pressed
                     } else if rresp.hovered() {
@@ -623,8 +641,9 @@ fn preview(app: &mut FigApp, painter: &egui::Painter, prect: Rect, id: NodeId, p
     if rebuild {
         let doc = app.session.doc().ok().cloned();
         if let Some(doc) = doc
-            && let Some(pix) = figcraft_render::preview3d::cube(&doc, id, (pw, ph))
+            && let Some((pix, dot)) = figcraft_render::preview3d::cube(&doc, id, (pw, ph))
         {
+            app.ui.t3_dot_norm = Some(dot.map_or(vec2(0.5, 0.5), |d| vec2(d.0, d.1)));
             let image = egui::ColorImage::from_rgba_premultiplied([pix.width() as usize, pix.height() as usize], pix.data());
             let handle = match &app.ui.t3_preview {
                 Some((_, handle)) if handle.size() == image.size => {

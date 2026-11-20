@@ -18,7 +18,7 @@ const MIN_THICKNESS: f64 = 48.0;
 
 /// The turned slab of layer `id` drawn into a transparent pixmap of `size` (px, the preview
 /// panel's own pixels).
-pub fn cube(doc: &Document, id: NodeId, size: (u32, u32)) -> Option<Pixmap> {
+pub fn cube(doc: &Document, id: NodeId, size: (u32, u32)) -> Option<(Pixmap, Option<(f32, f32)>)> {
     let n = doc.node(id)?;
     let t3 = turned(n)?;
     let (pw, ph) = (f64::from(size.0), f64::from(size.1));
@@ -27,35 +27,33 @@ pub fn cube(doc: &Document, id: NodeId, size: (u32, u32)) -> Option<Pixmap> {
     }
     let (w, h) = (n.width.max(1.0), n.height.max(1.0));
     let pivot = t3.pivot(w, h);
-    // The thickness: the effect's own depth, else a share of the layer's smaller side so the
-    // preview reads as a 3D block (a cube for a square layer), signed like the depth.
-    let illustrative = MIN_THICKNESS.max(w.min(h) * 0.6);
-    let thickness = if t3.depth < 0.0 { -(-t3.depth).max(illustrative) } else { t3.depth.max(illustrative) };
+    // The thickness: none while the plane is still flat (the preview starts as the layer's own
+    // plane); once it is turned or given a depth it is a slab — the effect's depth, else a share
+    // of the layer's smaller side so the 3D body reads (a cube for a square layer).
+    let thickness = slab_thickness(&t3, w, h);
+    let slab = thickness.abs() > 0.01;
     // The plane's homography, about the pivot, in the layer's own coordinates.
     let front = figcraft_doc::transform3d::plane_homography(&t3, pivot, Some(CAMERA));
-    let back_t3 = Transform3d { depth: t3.depth - thickness, ..t3.clone() };
-    let back = figcraft_doc::transform3d::plane_homography(&back_t3, pivot, Some(CAMERA));
-    // The local box's extent through the two planes (local units, about the pivot): how much
-    // room the slab takes, for the fit.
+    let back = slab.then(|| {
+        let back_t3 = Transform3d { depth: t3.depth - thickness, ..t3.clone() };
+        figcraft_doc::transform3d::plane_homography(&back_t3, pivot, Some(CAMERA))
+    });
+    // The local box's extent through the plane(s) (local units, about the pivot): how much room
+    // the slab takes, for the fit.
     let rect = Rect::new(0.0, 0.0, w, h);
     let (fx0, fx1) = extent(&front.quad(rect), |p| p.x);
     let (fy0, fy1) = extent(&front.quad(rect), |p| p.y);
-    let (bx0, bx1) = extent(&back.quad(rect), |p| p.x);
-    let (by0, by1) = extent(&back.quad(rect), |p| p.y);
-    let span_x = (fx1 - fx0).max(bx1 - bx0).max(1.0);
-    let span_y = (fy1 - fy0).max(by1 - by0).max(1.0);
+    let (mut span_x, mut span_y) = ((fx1 - fx0).max(1.0), (fy1 - fy0).max(1.0));
+    if let Some(back) = &back {
+        let (bx0, bx1) = extent(&back.quad(rect), |p| p.x);
+        let (by0, by1) = extent(&back.quad(rect), |p| p.y);
+        span_x = span_x.max(bx1 - bx0);
+        span_y = span_y.max(by1 - by0);
+    }
     let fit = ((pw * 0.72) / span_x).min((ph * 0.72) / span_y).min(8.0);
     if !(fit.is_finite() && fit > 0.0) {
         return None;
     }
-    // Turned local → preview: the pivot sits at the panel's centre.
-    let place = |h: Homography| {
-        Homography::from_affine(Affine::translate((pw / 2.0, ph / 2.0)))
-            .mul(Homography::from_affine(Affine::scale(fit)))
-            .mul(h)
-            .mul(Homography::from_affine(Affine::translate((-pivot.0, -pivot.1))))
-    };
-    let (front, back) = (place(front), place(back));
     // The layer's flat render, in page coordinates.
     let bounds = crate::raster_bounds(doc, id)?;
     let content_w = ((bounds.width() * fit * 2.0).ceil().min(1024.0) as u32).max(1);
@@ -65,47 +63,83 @@ pub fn cube(doc: &Document, id: NodeId, size: (u32, u32)) -> Option<Pixmap> {
     let rs = f64::from(content.width()) / bounds.width().max(1e-6);
     // The page → preview homography: through the layer's placement, the turn, and the fit.
     let page_to_preview = |plane: Homography| {
-        Homography::from_affine(place_affine(pw, ph, fit, pivot))
-            .mul(plane)
-            .mul(Homography::from_affine(doc.world_transform(id).inverse()))
+        place_homography(pw, ph, fit, pivot).mul(plane).mul(Homography::from_affine(doc.world_transform(id).inverse()))
     };
+    // The page → preview homography goes through the *unplaced* turn: the placement is already
+    // inside `page_to_preview` (and `place` is for local pixels only).
     let front_h = page_to_preview(front);
-    let back_h = page_to_preview(back);
     let mut out = Pixmap::new(size.0, size.1)?;
-    // The back face first: the mirrored, darkened render.
-    if let Some((mut face, at)) = warp(&content, bounds, rs, &back_h, size.0, size.1) {
-        dim(&mut face, 0.35);
-        composite(&mut out, at, &face, 1.0, figcraft_color::BlendMode::Normal);
+    let mut back_h = None;
+    if let Some(back) = back {
+        let h = page_to_preview(back);
+        // The back face first: the mirrored, darkened render.
+        if let Some((mut face, at)) = warp(&content, bounds, rs, &h, size.0, size.1) {
+            dim(&mut face, 0.35);
+            composite(&mut out, at, &face, 1.0, figcraft_color::BlendMode::Normal);
+        }
+        back_h = Some(h);
     }
-    // The four sides: the silhouette's colour, shaded per face (the light from the top left).
-    let average = average_colour(&content);
+    // The four sides (only a slab has them): the silhouette's colour, shaded per face (the
+    // light from the top left).
     let world = doc.world_transform(id);
     let page_corner = |local: (f64, f64)| world * Point::new(local.0, local.1);
-    let corners = [(0.0, 0.0), (w, 0.0), (w, h), (0.0, h)];
-    for i in 0..4 {
-        let (a, b) = (corners[i], corners[(i + 1) % 4]);
-        let pa = page_corner(a);
-        let pb = page_corner(b);
-        let (fa, fb) = (front_h.apply(pa.x, pa.y), front_h.apply(pb.x, pb.y));
-        let (ba, bb) = (back_h.apply(pa.x, pa.y), back_h.apply(pb.x, pb.y));
-        let shade = match i {
-            0 => 0.86, // top
-            1 => 0.62, // right
-            2 => 0.42, // bottom
-            _ => 0.55, // left
-        };
-        fill_quad(&mut out, [fa, fb, bb, ba], average, shade);
+    if let Some(back_h) = &back_h {
+        let average = average_colour(&content);
+        let corners = [(0.0, 0.0), (w, 0.0), (w, h), (0.0, h)];
+        for i in 0..4 {
+            let (a, b) = (corners[i], corners[(i + 1) % 4]);
+            let pa = page_corner(a);
+            let pb = page_corner(b);
+            let (fa, fb) = (front_h.apply(pa.x, pa.y), front_h.apply(pb.x, pb.y));
+            let (ba, bb) = (back_h.apply(pa.x, pa.y), back_h.apply(pb.x, pb.y));
+            let shade = match i {
+                0 => 0.86, // top
+                1 => 0.62, // right
+                2 => 0.42, // bottom
+                _ => 0.55, // left
+            };
+            fill_quad(&mut out, [fa, fb, bb, ba], average, shade);
+        }
     }
     // The front face: the layer's own render, turned.
     if let Some((face, at)) = warp(&content, bounds, rs, &front_h, size.0, size.1) {
         composite(&mut out, at, &face, 1.0, figcraft_color::BlendMode::Normal);
     }
-    // The pivot dot.
+    // The pivot dot, and where it landed in the pixels (the panel puts its grab handle exactly
+    // there). The centroid of what was drawn is the truth, even where the projection rounds.
     let (dx, dy) = front_h.apply(page_corner(pivot).x, page_corner(pivot).y);
-    if let Some(dot) = tiny_skia::PathBuilder::from_circle(dx as f32, dy as f32, 3.5) {
-        out.fill_path(&dot, &tiny_skia::Paint { shader: tiny_skia::Shader::SolidColor(css(0x0D, 0x99, 0xFF)), anti_alias: true, ..Default::default() }, tiny_skia::FillRule::Winding, Transform::identity(), None);
+    let mut dot = None;
+    if let Some(path) = tiny_skia::PathBuilder::from_circle(dx as f32, dy as f32, 3.5) {
+        out.fill_path(&path, &tiny_skia::Paint { shader: tiny_skia::Shader::SolidColor(css(0x0D, 0x99, 0xFF)), anti_alias: true, ..Default::default() }, tiny_skia::FillRule::Winding, Transform::identity(), None);
+        let (mut sx, mut sy, mut n) = (0u64, 0u64, 0u64);
+        for (i, c) in out.pixels().iter().enumerate() {
+            if c.red() == 13 && c.green() == 153 && c.blue() == 255 {
+                sx += (i % out.width() as usize) as u64;
+                sy += (i / out.width() as usize) as u64;
+                n += 1;
+            }
+        }
+        if n > 0 {
+            dot = Some((sx as f32 / n as f32 / pw as f32, sy as f32 / n as f32 / ph as f32));
+        }
     }
-    Some(out)
+    Some((out, dot))
+}
+
+/// The preview slab's thickness for `t3` on a `w` × `h` layer: 0 while the plane is still flat
+/// (no X/Y turn and no depth — the preview shows the layer's own plane), else the effect's depth
+/// with the illustrative floor that makes the 3D body read.
+fn slab_thickness(t3: &Transform3d, w: f64, h: f64) -> f64 {
+    let t3 = t3.sanitized();
+    if t3.rotate_x.abs() < 0.01 && t3.rotate_y.abs() < 0.01 && t3.depth.abs() < 0.01 {
+        return 0.0;
+    }
+    // The body grows with the turn: a 1° tilt is a plane barely off the page, and by about 30°
+    // the preview reads as the full 3D model (still a plane at rest: that is the flat starting
+    // point the drag begins from).
+    let illustrative = MIN_THICKNESS.max(w.min(h) * 0.6);
+    let grow = (t3.rotate_x.abs().max(t3.rotate_y.abs()) / 30.0).clamp(0.2, 1.0);
+    if t3.depth < 0.0 { -(-t3.depth).max(illustrative * grow) } else { t3.depth.max(illustrative * grow) }
 }
 
 fn turned(n: &Node) -> Option<Transform3d> {
@@ -115,8 +149,12 @@ fn turned(n: &Node) -> Option<Transform3d> {
     })
 }
 
-fn place_affine(pw: f64, ph: f64, fit: f64, pivot: (f64, f64)) -> Affine {
-    Affine::translate((pw / 2.0, ph / 2.0)) * Affine::scale(fit) * Affine::translate((-pivot.0, -pivot.1))
+/// The fitted placement: the turned plane's local coordinates (the pivot kept in place by the
+/// turn) onto the panel, with the pivot at its centre.
+fn place_homography(pw: f64, ph: f64, fit: f64, pivot: (f64, f64)) -> Homography {
+    Homography::from_affine(
+        Affine::translate((pw / 2.0, ph / 2.0)) * Affine::scale(fit) * Affine::translate((-pivot.0, -pivot.1)),
+    )
 }
 
 /// The smallest and largest coordinate along `at`.
@@ -176,4 +214,45 @@ fn dim(pix: &mut Pixmap, k: f64) {
 
 fn css(r: u8, g: u8, b: u8) -> tiny_skia::Color {
     tiny_skia::Color::from_rgba8(r, g, b, 255)
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::slab_thickness;
+    use figcraft_doc::Transform3d;
+
+    #[test]
+    fn the_pivot_sits_in_the_middle_and_its_dot_is_reported_there() {
+        use figcraft_doc::NodeKind;
+        for (x, y, w, h) in [(0.0, 0.0, 100.0, 100.0), (300.0, 200.0, 400.0, 260.0)] {
+            let mut d = figcraft_doc::Document::new("turn");
+            let p = d.first_page().unwrap();
+            let r = d.create(p, NodeKind::Rectangle, "R", x, y, w, h).unwrap();
+            d.get_mut(r).unwrap().fills = vec![figcraft_color::Paint::solid(figcraft_color::Color::from_hex("FF0000").unwrap())];
+            d.get_mut(r).unwrap().effects = vec![figcraft_doc::Effect {
+                kind: figcraft_doc::EffectKind::Transform3d(Transform3d { rotate_x: 20.0, rotate_y: 30.0, ..Default::default() }),
+                visible: true,
+            }];
+            let (pix, dot) = super::cube(&d, r, (460, 360)).unwrap();
+            let (nx, ny) = dot.unwrap_or_else(|| panic!("{w}x{h} at {x},{y}: the dot is drawn"));
+            assert!((nx - 0.5).abs() < 0.02 && (ny - 0.5).abs() < 0.02, "{w}x{h} at {x},{y}: dot at {nx},{ny}");
+            // The slab covers the middle (not a corner sliver): the pivot stays at the centre
+            // (the dot itself sits right there, so sample beside it).
+            let mid = pix.pixel(200, 150).unwrap();
+            assert!(mid.red() > 120 && mid.green() < 100, "{w}x{h} at {x},{y}: slab middle {mid:?}");
+        }
+    }
+
+    #[test]
+    fn the_preview_is_a_flat_plane_until_it_is_turned_or_given_depth() {
+        let flat = Transform3d::default();
+        assert_eq!(slab_thickness(&flat, 100.0, 80.0), 0.0, "the preview starts as the layer's own plane");
+        let turned = Transform3d { rotate_x: 20.0, rotate_y: 30.0, ..Default::default() };
+        assert!(slab_thickness(&turned, 100.0, 80.0) > 0.0, "turning it brings the 3D body");
+        let deep = Transform3d { depth: 30.0, ..Default::default() };
+        assert!(slab_thickness(&deep, 100.0, 80.0).abs() >= 30.0, "a depth extrudes the body");
+        let z_only = Transform3d { rotate_z: 45.0, ..Default::default() };
+        assert_eq!(slab_thickness(&z_only, 100.0, 80.0), 0.0, "a Z turn stays in the plane");
+    }
 }

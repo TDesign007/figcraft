@@ -162,6 +162,24 @@ fn the_rotation_and_depth_labels_read_and_translate() {
 }
 
 #[test]
+fn hovering_the_preview_centre_shows_the_rotation_ring() {
+    let (mut u, r) = rect_with_effect(&json!({"type": "transform3d", "rotateX": 20.0}));
+    u.app.ui.t3_popover = Some((r, 0, row_rect()));
+    u.frame(vec![]);
+    u.frame(vec![]);
+    let prect = u.app.ui.t3_preview_rect.expect("the preview is drawn");
+    let norm = u.app.ui.t3_dot_norm.expect("the preview knows where its pivot dot is");
+    let dot = Pos2::new(prect.min.x + norm.x * prect.width(), prect.min.y + norm.y * prect.height());
+    // Hover the dot — the pivot, the grab point for the orientation.
+    u.frame(vec![egui::Event::PointerMoved(dot)]);
+    let shapes = flat(&u.frame_output(vec![]).shapes);
+    let ring = shapes.iter().any(|s| {
+        matches!(s, Shape::Circle(c) if (c.radius - 9.0).abs() < 0.1 && (c.center - dot).length() < 0.5 && c.stroke.width > 0.0)
+    });
+    assert!(ring, "the centre handle's ring shows while hovering the dot");
+}
+
+#[test]
 fn the_reset_button_is_drawn_at_the_preview_corner() {
     let (mut u, r) = rect_with_effect(&json!({"type": "transform3d", "rotateX": -29.0, "rotateY": -45.0, "depth": 80.0}));
     u.app.ui.t3_popover = Some((r, 0, row_rect()));

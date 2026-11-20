@@ -515,6 +515,8 @@ pub struct UiState {
     pub t3_settings_open: bool,
     /// The popover's preview texture (the cube), keyed by the raster that built it.
     pub t3_preview: Option<((u64, u32, u32), egui::TextureHandle)>,
+    /// The pivot dot's place in the preview, normalized to 0..1 (the centre handle).
+    pub t3_dot_norm: Option<egui::Vec2>,
     /// The 3D transform's popover chrome (its placement and size, kept between frames).
     pub t3_popover_pop: Option<crate::popover::Popover>,
     /// The settings popover's chrome.
@@ -743,6 +745,7 @@ impl Default for UiState {
             t3_pivot_btn_rect: None,
             t3_settings_open: false,
             t3_preview: None,
+            t3_dot_norm: None,
             t3_popover_pop: None,
             t3_settings_pop: None,
             t3_settings_rect: None,
