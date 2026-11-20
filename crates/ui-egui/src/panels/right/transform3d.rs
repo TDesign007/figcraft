@@ -270,11 +270,12 @@ fn ph() -> u32 {
     (PREVIEW_H * 2.0).round() as u32
 }
 
-/// A label at the row's left inset.
+/// A label at the row's left inset. It uses the panel's secondary ink (not `menu_text`, which
+/// is white: invisible on the light panel); the text is the translated key.
 fn label_at(ui: &mut egui::Ui, t: &Tokens, label: &str, inset: f32) {
-    let galley = ui.painter().layout_no_wrap(label.to_string(), regular(12.0), t.menu_text);
+    let galley = ui.painter().layout_no_wrap(label.to_string(), regular(12.0), t.text_secondary);
     let cy = ui.cursor().center().y - galley.size().y / 2.0;
-    ui.painter().galley(pos2(ui.cursor().min.x + inset, cy), galley, t.menu_text);
+    ui.painter().galley(pos2(ui.cursor().min.x + inset, cy), galley, t.text_secondary);
 }
 
 /// The pivot picker's panel: a 3 × 3 grid of points on the layer (the corners, the edge

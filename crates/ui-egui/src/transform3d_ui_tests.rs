@@ -112,6 +112,41 @@ fn the_popover_header_reads_on_the_light_panel() {
 }
 
 #[test]
+fn the_rotation_and_depth_labels_read_and_translate() {
+    let (mut u, r) = rect_with_effect(&json!({"type": "transform3d", "rotateX": 10.0, "depth": 40.0}));
+    u.app.ui.t3_popover = Some((r, 0, row_rect()));
+    // Past the fade-in, so the labels paint in their settled token colour.
+    for _ in 0..30 {
+        u.frame(vec![]);
+    }
+    let panel = u.app.ui.t3_popover_pop.as_ref().unwrap().rect;
+    let tokens = crate::theme::Tokens::get(&u.ctx);
+    let label = |u: &mut Ui, want: &str| {
+        let shapes = flat(&u.frame_output(vec![]).shapes);
+        shapes
+            .iter()
+            .find_map(|shape| match shape {
+                Shape::Text(t) if t.galley.text() == want && panel.contains(t.pos) => Some(t.clone()),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("{want} is painted in the popover"))
+    };
+    let rotation = label(&mut u, crate::i18n::tr("Rotation"));
+    let depth = label(&mut u, crate::i18n::tr("Depth"));
+    assert_eq!(rotation.fallback_color, tokens.text_secondary, "the Rotation label reads on the light panel");
+    assert_eq!(depth.fallback_color, tokens.text_secondary, "the Depth label reads on the light panel");
+    // The labels sit to the left of their fields (the field column starts 80 points into the row).
+    assert!(rotation.pos.x < panel.min.x + 80.0, "Rotation is left of the X field");
+    assert!(depth.pos.x < panel.min.x + 80.0, "Depth is left of the depth field");
+    // Both are translated keys (the test language is English, where the key is the text; switching
+    // the global language here would leak into parallel tests): the Simplified Chinese catalog
+    // carries them. Regional catalogs may omit them and fall back to their parent.
+    let zh = crate::i18n::languages().iter().find(|l| l.code == "zh-Hans").expect("the Simplified Chinese catalog");
+    assert!(zh.ui.iter().any(|(k, _)| *k == "Rotation"), "Rotation translates");
+    assert!(zh.ui.iter().any(|(k, _)| *k == "Depth"), "Depth translates");
+}
+
+#[test]
 fn the_reset_button_is_drawn_at_the_preview_corner() {
     let (mut u, r) = rect_with_effect(&json!({"type": "transform3d", "rotateX": -29.0, "rotateY": -45.0, "depth": 80.0}));
     u.app.ui.t3_popover = Some((r, 0, row_rect()));
