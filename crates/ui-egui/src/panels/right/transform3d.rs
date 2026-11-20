@@ -72,17 +72,26 @@ pub(crate) fn popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId, i: usiz
     // row is near its bottom (the popover is about 380 points tall). The row's press is held out
     // of the outside-close.
     let screen_h = ctx.content_rect().height();
+    // Fully on the canvas, to the left of the right panel (never over the panel or the row);
+    // lifted to stay inside the window when the row is near its bottom.
+    let panel_left = app.ui.right_panel_rect.map(|r| r.left()).unwrap_or(row_rect.left());
+    let tall = 380.0 + if app.ui.t3_origin_open { 140.0 } else { 0.0 };
     let at = Pos2::new(
-        (row_rect.left() - WIDTH - 8.0).max(8.0),
-        row_rect.top().max(8.0).min((screen_h - 380.0).max(8.0)),
+        (panel_left - WIDTH - 8.0).max(8.0),
+        row_rect.top().max(8.0).min((screen_h - tall).max(8.0)),
     );
     let held = row_rect;
-    let mut pop = app.ui.t3_popover_pop.take().unwrap_or_else(|| Popover::with_id(Id::unique("t3_popover"), tr("3D transform")).at(at).pad(10.0));
-    pop = pop.close_on_outside(true);
+    let mut pop = app
+        .ui
+        .t3_popover_pop
+        .take()
+        .unwrap_or_else(|| Popover::with_id(Id::unique("t3_popover"), tr("3D transform")).width(WIDTH).pad(10.0));
+    // The anchor follows the row and the panel every frame (the chrome persists between frames).
+    pop = pop.at(at).close_on_outside(true);
     let mut hold: Vec<egui::Rect> = vec![held];
     hold.extend(app.ui.t3_settings_rect);
     let closed = pop.show(ctx, crate::popover::Open::At(at), crate::popover::Hold { rects: &hold, escape: false }, |ui| {
-                    ui.set_width(WIDTH - 16.0);
+                    ui.set_width(WIDTH - 20.0);
                     // The header: the effect's mark, the layer's name, the pivot picker (⊕), the
                     // close (the Popover's own header carries the title and the X).
                     row(ui, 30.0, |ui| {
@@ -111,11 +120,15 @@ pub(crate) fn popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId, i: usiz
                     ui.add_space(2.0);
                     // The preview: the turned slab, dragged to turn it in real time, with a reset.
                     let (_, prect) = ui.allocate_space(vec2(WIDTH - 20.0, PREVIEW_H));
-                    let resp = ui.interact(prect, Id::unique("t3_preview"), Sense::click_and_drag());
+                    // The drag covers the preview except the reset's corner: a click-only widget
+                    // inside a drag widget's rect never sees the press.
+                    let drag_rect = Rect::from_min_max(prect.min, pos2(prect.max.x - 30.0, prect.max.y - 30.0));
+                    let resp = ui.interact(drag_rect, Id::unique("t3_preview"), Sense::click_and_drag());
                     ui.painter().rect_filled(prect, CornerRadius::same(8), t.panel);
                     let painter = ui.painter().with_clip_rect(prect.intersect(ui.clip_rect()));
                     preview(app, &painter, prect, id, pw(), ph());
                     let reset_rect = Rect::from_min_size(prect.right_bottom() - vec2(30.0, 30.0), vec2(24.0, 24.0));
+                    app.ui.t3_reset_rect = Some(reset_rect);
                     // The reset: an icon button drawn at the preview's bottom-right corner.
                     let rresp = ui.interact(reset_rect, Id::unique("t3_reset"), Sense::click());
                     let bg = if rresp.is_pointer_button_down_on() {
@@ -146,13 +159,13 @@ pub(crate) fn popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId, i: usiz
                     }
                     ui.add_space(6.0);
                     // The turns: one label for the three rows, the fields in their column.
-                    let fields_x = 88.0;
-                    let field_w = WIDTH - 26.0 - fields_x;
+                    let fields_x = 72.0;
                     let turns = [("X", t3.rotate_x, "rotateX"), ("Y", t3.rotate_y, "rotateY"), ("Z", t3.rotate_z, "rotateZ")];
                     for (lead, value, prop) in turns {
                         row(ui, 30.0, |ui| {
-                            label_at(ui, &t, lead, 10.0);
+                            label_at(ui, &t, lead, 0.0);
                             ui.add_space(fields_x);
+                            let field_w = ui.available_width();
                             let ed = t3_field(app, ui, &ids, i, prop, crate::widgets::Lead::Text(lead), Some(value), "°", field_w);
                             if let Some(ed) = ed {
                                 match ed {
@@ -163,8 +176,9 @@ pub(crate) fn popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId, i: usiz
                         });
                     }
                     row(ui, 30.0, |ui| {
-                        label_at(ui, &t, &tr("Depth"), 10.0);
+                        label_at(ui, &t, &tr("Depth"), 0.0);
                         ui.add_space(fields_x);
+                        let field_w = ui.available_width();
                         let ed = t3_field(app, ui, &ids, i, "depth", crate::widgets::Lead::Icon(Icon::DistributeV, ""), Some(t3.depth), "", field_w);
                         if let Some(ed) = ed {
                             match ed {
@@ -261,9 +275,9 @@ fn origin_panel(app: &mut FigApp, ui: &mut egui::Ui, ids: &[NodeId], i: usize, t
         }
     }
     // The precise origin, in the layer's percent.
-    let half = (panel_w - 12.0) / 2.0;
     let e_now = e_of_ids(app, ids, i);
     row(ui, 30.0, |ui| {
+        let half = (ui.available_width() - 8.0) / 2.0;
         let ed = t3_field(app, ui, ids, i, "originX", crate::widgets::Lead::Text("X"), Some(origin.0), "%", half);
         if let Some(ed) = ed {
             match ed {
@@ -271,7 +285,9 @@ fn origin_panel(app: &mut FigApp, ui: &mut egui::Ui, ids: &[NodeId], i: usize, t
                 crate::widgets::FieldEdit::Scrub(v, done) => t3_set(app, ids, i, tweaked_effect(e_now.clone(), |t2: &mut Transform3d| t2.origin.0 = v.clamp(0.0, 100.0)), Some(done)),
             }
         }
-        let ed = t3_field(app, ui, ids, i, "originY", crate::widgets::Lead::Text("Y"), Some(origin.1), "%", half);
+        ui.add_space(8.0);
+        let half2 = ui.available_width();
+        let ed = t3_field(app, ui, ids, i, "originY", crate::widgets::Lead::Text("Y"), Some(origin.1), "%", half2);
         if let Some(ed) = ed {
             match ed {
                 crate::widgets::FieldEdit::Set(v) => t3_set(app, ids, i, tweaked_effect(e_now.clone(), |t2: &mut Transform3d| t2.origin.1 = v.clamp(0.0, 100.0)), None),
@@ -332,8 +348,9 @@ pub(crate) fn settings_popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId
     // To the LEFT of the main popover, its top on the main one's top (the main one sits on the
     // canvas side of the row, lifted to stay inside the window).
     let screen_h = ctx.content_rect().height();
+    let panel_left = app.ui.right_panel_rect.map(|r| r.left()).unwrap_or(row_rect.left());
     let main_at = Pos2::new(
-        (row_rect.left() - 254.0 - 8.0).max(8.0),
+        (panel_left - 254.0 - 8.0).max(8.0),
         row_rect.top().max(8.0).min((screen_h - 380.0).max(8.0)),
     );
     let at = Pos2::new((main_at.x - settings_w - 8.0).max(8.0), main_at.y.max(8.0));
@@ -341,8 +358,8 @@ pub(crate) fn settings_popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId
         .ui
         .t3_settings_pop
         .take()
-        .unwrap_or_else(|| Popover::with_id(Id::unique("t3_settings"), tr("Settings")).at(at).pad(10.0));
-    pop = pop.close_on_outside(true);
+        .unwrap_or_else(|| Popover::with_id(Id::unique("t3_settings"), tr("Settings")).width(settings_w).pad(10.0));
+    pop = pop.at(at).close_on_outside(true);
     let closed = pop.show(ctx, crate::popover::Open::At(at), crate::popover::Hold { rects: &[], escape: false }, |ui| {
         ui.set_width(settings_w - 20.0);
         row(ui, 36.0, |ui| {
@@ -350,7 +367,7 @@ pub(crate) fn settings_popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId
             let label = ui.painter().layout_no_wrap(tr("Backface").to_string(), regular(12.0), t.menu_text);
             let cy = ui.cursor().center().y - label.size().y / 2.0;
             ui.painter().galley(pos2(ui.cursor().min.x + 2.0, cy), label, t.menu_text);
-            ui.add_space(96.0);
+            ui.add_space(56.0);
             // Figma's two-segment switch: "—" (the back hidden) and "✓" (shown), the picked
             // segment filled and outlined.
             let seg_w = 74.0;

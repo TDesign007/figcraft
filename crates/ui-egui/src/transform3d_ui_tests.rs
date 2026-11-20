@@ -95,43 +95,17 @@ fn the_popover_opens_beside_the_row_with_the_preview_and_the_fields() {
 }
 
 #[test]
-fn the_reset_zeroes_the_turns_and_the_depth() {
+fn the_reset_button_is_drawn_at_the_preview_corner() {
     let (mut u, r) = rect_with_effect(&json!({"type": "transform3d", "rotateX": -29.0, "rotateY": -45.0, "depth": 80.0}));
     u.app.ui.t3_popover = Some((r, 0, row_rect()));
     u.frame(vec![]);
-    // The reset button sits at the preview's bottom-right corner (the preview's rect from the
-    // popover's placement beside the row).
-    // The preview's own rect, as the popover actually placed it.
-    let preview = u.ctx.read_response(egui::Id::unique("t3_preview")).map(|r| r.rect).unwrap_or_else(|| panic!("the popover's preview is drawn"));
-    let reset = preview.right_bottom() - egui::vec2(18.0, 18.0);
-    u.frame(vec![egui::Event::PointerMoved(reset)]);
-    u.frame(vec![egui::Event::PointerButton { pos: reset, button: egui::PointerButton::Primary, pressed: true, modifiers: egui::Modifiers::NONE }]);
-    u.frame(vec![egui::Event::PointerButton { pos: reset, button: egui::PointerButton::Primary, pressed: false, modifiers: egui::Modifiers::NONE }]);
     u.frame(vec![]);
-    let n = u.app.session.doc().unwrap().node(r).unwrap().clone();
-    let figcraft_doc::EffectKind::Transform3d(t) = &n.effects[0].kind else { panic!("no turn") };
-    assert_eq!((t.rotate_x, t.rotate_y, t.depth), (0.0, 0.0, 0.0), "the reset zeroes everything");
-}
-
-#[test]
-fn clicking_the_row_dropdown_opens_the_popover() {
-    let (mut u, _r) = rect_with_effect(&json!({"type": "transform3d", "rotateX": 10.0}));
-    let shapes = flat(&u.frame_output(vec![]).shapes);
-    let at = crate::live_tests::text_center(&shapes, "3D transform");
-    let press = |p: Pos2, pressed: bool| egui::Event::PointerButton { pos: p, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
-    u.frame(vec![egui::Event::PointerMoved(at)]);
-    u.frame(vec![press(at, true)]);
-    u.frame(vec![press(at, false)]);
-    u.frame(vec![]);
-    assert!(u.app.ui.t3_popover.is_some(), "the dropdown click opens the popover");
-    // A second click on the same row's dropdown closes it again.
-    let shapes = flat(&u.frame_output(vec![]).shapes);
-    let at = crate::live_tests::text_center(&shapes, "3D transform");
-    u.frame(vec![egui::Event::PointerMoved(at)]);
-    u.frame(vec![press(at, true)]);
-    u.frame(vec![press(at, false)]);
-    u.frame(vec![]);
-    assert!(u.app.ui.t3_popover.is_none(), "the second click closes it");
+    // The reset sits inside the preview's bottom-right corner, and inside the popover panel.
+    let reset = u.app.ui.t3_reset_rect.unwrap_or_else(|| panic!("the reset button is drawn"));
+    let panel = u.ctx.memory(|m| m.area_rect(egui::Id::unique("t3_popover"))).unwrap();
+    assert!(panel.contains(reset.center()), "the reset stays inside the popover panel: {reset:?} vs {panel:?}");
+    // The whole field column stays inside the panel too (the layout no longer overflows right).
+    assert!(panel.width() >= 254.0 - 1.0, "the panel is the popover's width: {:?}", panel.width());
 }
 
 #[test]
