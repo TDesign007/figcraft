@@ -432,4 +432,5 @@ pub fn open_context_menu(app: &mut FigApp, pos: Pos2, deep: bool) {
     }
     app.ui.context_menu = Some((pos, app.session.selection()));
     app.ui.context_menu_shown = false;
+    app.ui.ruler_menu = None;
 }

@@ -552,6 +552,9 @@ pub struct UiState {
     /// The opening widget, so only that control refreshes the held rectangle as it moves.
     pub picker_button_id: Option<egui::Id>,
     pub context_menu: Option<(egui::Pos2, Vec<NodeId>)>,
+    /// The context menu belongs to a ruler: `Some(true)` for the left (vertical) ruler, `Some(false)`
+    /// for the top one. Its entries remove that ruler's guides and hide the rulers.
+    pub ruler_menu: Option<bool>,
     /// The context menu was asked for from the keyboard (`view.contextMenu`): it opens at the
     /// focused layer row or the canvas selection and takes the keyboard.
     pub key_menu: bool,
@@ -759,6 +762,7 @@ impl Default for UiState {
             picker_button: None,
             picker_button_id: None,
             context_menu: None,
+            ruler_menu: None,
             key_menu: false,
             key_box: None,
             pick: None,

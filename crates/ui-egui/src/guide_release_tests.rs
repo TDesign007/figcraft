@@ -7,7 +7,7 @@ use figcraft_engine::Session;
 use serde_json::json;
 
 use crate::layers_drag_tests::Ui;
-use crate::live_tests::flat;
+use crate::live_tests::{flat, has_text};
 
 fn rulers() -> Ui {
     let mut s = Session::new();
@@ -88,6 +88,51 @@ fn guide_segments_width(shapes: &[egui::Shape]) -> Vec<([Pos2; 2], f32)> {
             _ => None,
         })
         .collect()
+}
+
+/// The page's guides' orientations (true: vertical lines, from the left ruler).
+fn orientations(u: &Ui) -> Vec<bool> {
+    let ds = u.app.session.ds().unwrap();
+    ds.doc.node(ds.page).unwrap().guides().iter().map(|g| g.vertical).collect()
+}
+
+/// A secondary click at `at`.
+fn right_click(u: &mut Ui, at: Pos2) {
+    let button = |pressed| Event::PointerButton { pos: at, button: egui::PointerButton::Secondary, pressed, modifiers: egui::Modifiers::NONE };
+    u.frame(vec![Event::PointerMoved(at)]);
+    u.frame(vec![button(true)]);
+    u.frame(vec![button(false)]);
+    u.frame(vec![]);
+}
+
+#[test]
+fn right_clicking_a_ruler_offers_removing_its_guides_and_hiding_the_rulers() {
+    let mut u = rulers();
+    let r = u.app.canvas.rect;
+    // One guide from each ruler: a horizontal line (top) and a vertical one (left).
+    drag(&mut u, Pos2::new(r.min.x + 100.0, r.min.y + 5.0), Pos2::new(r.min.x + 140.0, r.center().y));
+    drag(&mut u, Pos2::new(r.min.x + 5.0, r.min.y + 120.0), Pos2::new(r.center().x, r.min.y + 160.0));
+    assert_eq!(orientations(&u).iter().filter(|v| **v).count(), 1, "{:?}", orientations(&u));
+    assert_eq!(orientations(&u).iter().filter(|v| !**v).count(), 1, "{:?}", orientations(&u));
+    // The top ruler's menu: remove its (horizontal) guides, or hide the rulers.
+    right_click(&mut u, Pos2::new(r.min.x + 100.0, r.min.y + 8.0));
+    let shapes = flat(&u.frame_output(vec![]).shapes);
+    assert!(has_text(&shapes, "Remove all horizontal guides"), "the top ruler removes horizontal guides");
+    assert!(has_text(&shapes, "Hide rulers"));
+    let item = crate::live_tests::text_center(&shapes, "Remove all horizontal guides");
+    u.button(item, true);
+    u.button(item, false);
+    u.frame(vec![]);
+    assert_eq!(orientations(&u), vec![true], "the horizontal guide went, the vertical stays");
+    // The left ruler's menu names the vertical guides, and Hide rulers turns them off.
+    right_click(&mut u, Pos2::new(r.min.x + 8.0, r.min.y + 120.0));
+    let shapes = flat(&u.frame_output(vec![]).shapes);
+    assert!(has_text(&shapes, "Remove all vertical guides"), "the left ruler removes vertical guides");
+    let hide = crate::live_tests::text_center(&shapes, "Hide rulers");
+    u.button(hide, true);
+    u.button(hide, false);
+    u.frame(vec![]);
+    assert!(!u.app.session.ds().unwrap().view.rulers, "Hide rulers turns the rulers off");
 }
 
 #[test]

@@ -226,6 +226,36 @@ pub fn specs() -> Vec<CommandSpec> {
             ok()
         }),
         spec!(
+            "guide.removeAll",
+            "Remove all guides",
+            "{vertical?} (the current page's guides, in frames too; no `vertical`: both sorts) → {removed}",
+            true,
+            |s, p| {
+                let vertical = boolean(p, "vertical");
+                let page = s.page()?;
+                let ids = s.doc()?.subtree(page);
+                let mut removed = 0;
+                {
+                    let doc = s.doc_mut()?;
+                    for id in ids {
+                        let Ok(n) = doc.get_mut(id) else { continue };
+                        let before = n.guides().len();
+                        if before == 0 {
+                            continue;
+                        }
+                        // `vertical: false` takes the lines that run across (dragged from the top
+                        // ruler), `true` the ones that run down; with neither, every guide goes.
+                        n.guides_mut().retain(|g| vertical.is_some_and(|v| g.vertical != v));
+                        removed += before - n.guides().len();
+                    }
+                }
+                if removed > 0 {
+                    s.ds_mut()?.guide = None;
+                }
+                Ok(json!({"removed": removed}))
+            }
+        ),
+        spec!(
             "guide.select",
             "Select guide",
             "{index?, frame? | page?}  a ruler guide to delete or nudge (deselects layers; no index: none)",

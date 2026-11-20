@@ -262,6 +262,13 @@ pub fn input(app: &mut FigApp, ctx: &egui::Context, pos: Pos2) -> bool {
     let in_left = pos.x < r.min.x + RULER && pos.y > r.min.y + RULER;
     if in_top || in_left {
         ctx.set_cursor_icon(cursor(in_left));
+        // A right-click on either ruler offers removing its guides and hiding the rulers.
+        if ctx.input(|i| i.pointer.button_clicked(egui::PointerButton::Secondary)) {
+            app.ui.ruler_menu = Some(in_left);
+            app.ui.context_menu = Some((pos, Vec::new()));
+            app.ui.context_menu_shown = false;
+            return true;
+        }
         if pressed {
             let frame = selected_frame(app);
             ctx.data_mut(|d| d.insert_temp(drag_id(), GuideDrag::New { vertical: in_left, frame }));

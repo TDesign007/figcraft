@@ -42,8 +42,8 @@ fn perspective_comes_from_the_parent_frame() {
     s.execute("effect.add", &json!({"ids": [f], "type": "perspective"})).unwrap();
     s.execute("effect.set", &json!({"ids": [f], "index": 0, "effect": {"type": "perspective", "distance": 600.0}})).unwrap();
     let doc = s.doc().unwrap();
-    assert_eq!(figcraft_doc::transform3d::perspective_of(&doc, figcraft_doc::NodeId(r)), Some(600.0));
-    assert_eq!(figcraft_doc::transform3d::perspective_of(&doc, figcraft_doc::NodeId(f)), None, "a frame's own camera doesn't apply to itself");
+    assert_eq!(figcraft_doc::transform3d::perspective_of(doc, figcraft_doc::NodeId(r)), Some(600.0));
+    assert_eq!(figcraft_doc::transform3d::perspective_of(doc, figcraft_doc::NodeId(f)), None, "a frame's own camera doesn't apply to itself");
 }
 
 /// An unturled layer's projection is its placed box; a 90° turn about X collapses the plane onto
@@ -55,7 +55,7 @@ fn the_projection_follows_the_turn() {
     s.execute("effect.add", &json!({"ids": [r], "type": "transform3d"})).unwrap();
     let id = figcraft_doc::NodeId(r);
     let doc = s.doc().unwrap();
-    let q = figcraft_doc::transform3d::projected_quad(&doc, id).unwrap();
+    let q = figcraft_doc::transform3d::projected_quad(doc, id).unwrap();
     assert_eq!(q[0], Point::new(40.0, 40.0), "no turn: the box as placed");
     let _ = &doc;
     s.execute(
@@ -64,7 +64,7 @@ fn the_projection_follows_the_turn() {
     )
     .unwrap();
     let doc = s.doc().unwrap();
-    let q = figcraft_doc::transform3d::projected_quad(&doc, id).unwrap();
+    let q = figcraft_doc::transform3d::projected_quad(doc, id).unwrap();
     for c in &q {
         assert!((c.y - 90.0).abs() < 1e-9, "every corner on the pivot line: {c:?}");
     }
@@ -77,12 +77,12 @@ fn the_projection_follows_the_turn() {
     .unwrap();
     let doc = s.doc().unwrap();
     let pt = Point::new(200.0, 250.0);
-    let back = figcraft_doc::transform3d::unwarped(&doc, id, pt).unwrap();
+    let back = figcraft_doc::transform3d::unwarped(doc, id, pt).unwrap();
     // `back` is the page point the hit sits at on the flat plane: through the layer's placement
     // it is the plane's local coordinates, and the homography maps them back to the hit.
     let world = doc.world_transform(id);
     let local = world.inverse() * back;
-    let h = figcraft_doc::transform3d::node_homography(&doc, id).unwrap();
+    let h = figcraft_doc::transform3d::node_homography(doc, id).unwrap();
     let (x, y) = h.apply(local.x, local.y);
     assert!((x - pt.x).abs() < 1e-9 && (y - pt.y).abs() < 1e-9);
 }
@@ -100,7 +100,7 @@ fn a_turned_layer_hits_where_its_plane_paints() {
     let doc = s.doc().unwrap();
     let result = geometry::BoolResult::default();
     // The projected plane spans y 54.6..125.4 about the centre (90, 90).
-    let hit = doc.hit_test(page, Point::new(90.0, 120.0), 0.0, result.clone());
+    let hit = doc.hit_test(page, Point::new(90.0, 120.0), 0.0, result);
     assert_eq!(hit, Some(figcraft_doc::NodeId(r)), "inside the turned plane's span");
     let hit = doc.hit_test(page, Point::new(90.0, 135.0), 0.0, result);
     assert_eq!(hit, None, "inside the old box, off the turned plane");
@@ -120,7 +120,7 @@ fn the_css_shows_the_3d_transform() {
     .unwrap();
     let doc = s.doc().unwrap();
     let n = doc.node(figcraft_doc::NodeId(r)).unwrap();
-    let css = crate::dev::codegen::css_decls(&doc, n, &mut crate::dev::codegen::Tokens::default(), (false, false));
+    let css = crate::dev::codegen::css_decls(doc, n, &mut crate::dev::codegen::Tokens::default(), (false, false));
     assert!(css.contains("transform: rotateX(-29deg) rotateY(-45deg) rotateZ(0deg) translateZ(80px);"), "the CSS functions in order: {css}");
     assert!(css.contains("transform-origin: 50% 50%;"), "the pivot is the origin: {css}");
     assert!(css.contains("backface-visibility: hidden;"), "the hidden back: {css}");
@@ -136,6 +136,6 @@ fn the_perspective_is_the_frame_s_css_property() {
     s.execute("effect.set", &json!({"ids": [f], "index": 0, "effect": {"type": "perspective", "distance": 600.0}})).unwrap();
     let doc = s.doc().unwrap();
     let n = doc.node(figcraft_doc::NodeId(f)).unwrap();
-    let css = crate::dev::codegen::css_decls(&doc, n, &mut crate::dev::codegen::Tokens::default(), (false, false));
+    let css = crate::dev::codegen::css_decls(doc, n, &mut crate::dev::codegen::Tokens::default(), (false, false));
     assert!(css.contains("perspective: 600px;"), "the camera on the frame: {css}");
 }

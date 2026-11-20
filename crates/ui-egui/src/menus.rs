@@ -461,6 +461,14 @@ pub fn popups(app: &mut FigApp, ctx: &egui::Context) {
                 if select_layer_menu(app, ui, pos, &t) {
                     close = true;
                 }
+                // A ruler's right-click menu: remove that ruler's guides and hide the rulers.
+                let ruler = app.ui.ruler_menu;
+                let ruler_has = ruler.is_some_and(|vertical| {
+                    let Ok(page) = app.session.page() else { return false };
+                    app.session.doc().ok().is_some_and(|doc| {
+                        doc.subtree(page).iter().any(|id| doc.node(*id).is_some_and(|n| n.guides().iter().any(|g| g.vertical == vertical)))
+                    })
+                });
                 let has_sel = !ids.is_empty();
                 // Sections in the selection add a contents toggle naming what it will do.
                 let section_toggle = app.session.doc().ok().and_then(|doc| {
@@ -501,7 +509,12 @@ pub fn popups(app: &mut FigApp, ctx: &egui::Context) {
                     matches!(app.session.selection().as_slice(), [id] if doc.node(*id).and_then(figcraft_engine::cmd::image::top_image_fill).is_some())
                 });
                 let copy_link = i18n::command("edit.copyLink", "Copy link to selection");
-                let mut entries: Vec<(&str, &str)> = if has_sel {
+                let mut entries: Vec<(&str, &str)> = if let Some(vertical) = ruler {
+                    vec![(
+                        if vertical { tr("Remove all vertical guides") } else { tr("Remove all horizontal guides") },
+                        "guide.removeAll",
+                    )]
+                } else if has_sel {
                     vec![
                         (tr("Copy"), "edit.copy"),
                         (tr("Paste here"), "edit.paste"),
@@ -576,8 +589,12 @@ pub fn popups(app: &mut FigApp, ctx: &egui::Context) {
                     entries[at] = (tr("Go to main component"), "component.goToMain");
                 }
                 // A right-clicked ruler guide (selected, with no layers) can be removed.
-                if !has_sel && app.session.ds().is_ok_and(|d| d.selected_guide().is_some()) {
+                if ruler.is_none() && !has_sel && app.session.ds().is_ok_and(|d| d.selected_guide().is_some()) {
                     entries.splice(0..0, [(tr("Remove guide"), "guide.remove"), ("-", "")]);
+                }
+                if ruler.is_some() {
+                    entries.push(("-", ""));
+                    entries.push((tr("Hide rulers"), "view.rulers"));
                 }
                 for (label, id) in &entries {
                     if *label == "-" {
@@ -608,12 +625,23 @@ pub fn popups(app: &mut FigApp, ctx: &egui::Context) {
                         continue;
                     }
                     let sc = crate::shortcuts::shortcut(id).unwrap_or("");
-                    if item(ui, label, sc, available(id), false, &t) {
-                        if *id == "edit.paste" {
-                            let p = app.to_page(pos);
-                            paste(app, None, Some((p.x, p.y)));
-                        } else {
-                            invoke(app, id);
+                    let enabled = if *id == "guide.removeAll" { ruler_has } else { available(id) };
+                    if item(ui, label, sc, enabled, false, &t) {
+                        match *id {
+                            "guide.removeAll" => {
+                                if let Some(vertical) = ruler {
+                                    app.run("guide.removeAll", json!({"vertical": vertical}));
+                                }
+                            }
+                            // The rulers are on (the menu came from one): this always hides them.
+                            "view.rulers" if ruler.is_some() => {
+                                app.run("view.rulers", json!({"on": false}));
+                            }
+                            "edit.paste" => {
+                                let p = app.to_page(pos);
+                                paste(app, None, Some((p.x, p.y)));
+                            }
+                            _ => invoke(app, id),
                         }
                         close = true;
                     }
@@ -625,6 +653,7 @@ pub fn popups(app: &mut FigApp, ctx: &egui::Context) {
         let clicked_outside = !fresh && ctx.input(|i| i.pointer.any_pressed()) && !area.response.hovered() && !over_menu(ctx);
         if close || clicked_outside || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             app.ui.context_menu = None;
+            app.ui.ruler_menu = None;
             forget_tree(ctx, ctx_menu_id());
         }
     } else {
