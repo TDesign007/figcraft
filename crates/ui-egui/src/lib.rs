@@ -520,6 +520,8 @@ pub struct UiState {
     pub t3_reset_rect: Option<egui::Rect>,
     /// The preview panel's rect, as drawn last frame.
     pub t3_preview_rect: Option<egui::Rect>,
+    /// The header's settings (sliders) button rect, as drawn last frame.
+    pub t3_settings_btn_rect: Option<egui::Rect>,
     /// A message at the bottom of the window and how long it has been showing.
     pub toast: Option<(String, ToastClock)>,
     pub present: Option<present::Presenter>,
@@ -734,6 +736,7 @@ impl Default for UiState {
             t3_settings_rect: None,
             t3_reset_rect: None,
             t3_preview_rect: None,
+            t3_settings_btn_rect: None,
             toast: None,
             present: None,
             presents: Vec::new(),

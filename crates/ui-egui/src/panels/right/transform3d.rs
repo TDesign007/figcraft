@@ -7,7 +7,7 @@ use egui::{Color32, CornerRadius, Id, Pos2, Rect, Sense, Stroke, Vec2, pos2, vec
 use figcraft_doc::{Effect, EffectKind, NodeId, Transform3d};
 use serde_json::json;
 
-use super::menu::row;
+use super::menu::{row, row_rect as menu_row_rect};
 use super::semibold;
 use super::{FigApp, Tokens};
 use crate::popover::Popover;
@@ -104,30 +104,48 @@ pub(crate) fn popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId, i: usiz
                         ui.advance_cursor_after_rect(title_rect);
                         ui.add_space(6.0);
                         name_pill(ui, t, &name);
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if icons::button(ui, Icon::Close, 26.0, false, tr("Close")).clicked() {
-                                app.ui.t3_popover = None;
-                            }
-                            if icons::button(ui, Icon::Adjust, 26.0, app.ui.t3_settings_open, tr("Settings")).clicked() {
-                                app.ui.t3_settings_open = !app.ui.t3_settings_open;
-                            }
-                            let (r, resp) = ui.allocate_exact_size(vec2(26.0, 26.0), Sense::click());
-                            let active = app.ui.t3_origin_open;
-                            let bg = if active {
-                                t.selected_row
-                            } else if resp.hovered() {
-                                t.hover
-                            } else {
-                                Color32::TRANSPARENT
-                            };
-                            ui.painter().rect_filled(r, CornerRadius::same(5), bg);
-                            crosshair(ui.painter(), r.center(), if active { t.accent_text } else { t.icon });
-                            let resp = crate::a11y::Tip::tip(resp, tr("Rotation point"));
-                            if resp.clicked() {
-                                app.ui.t3_origin_open = !app.ui.t3_origin_open;
-                            }
-                        });
                     });
+                    // The three icons pinned to the header's right edge (painted and hit-tested
+                    // at fixed places, so a long name can never cover them): the pivot picker,
+                    // the settings and the close.
+                    let hr = ui.min_rect();
+                    let icon_at = |n: usize| {
+                        let right = hr.max.x - 8.0 - 26.0 * (n as f32 + 1.0) - 6.0 * n as f32;
+                        Rect::from_min_size(pos2(right, hr.center().y - 13.0), vec2(26.0, 26.0))
+                    };
+                    let icon_btn = |ui: &mut egui::Ui, r: Rect, active: bool, id: Id, label: &str, paint: &dyn Fn(&egui::Painter)| {
+                        let resp = ui.interact(r, id, Sense::click());
+                        crate::a11y::describe(&resp, label);
+                        let bg = if active {
+                            t.selected_row
+                        } else if resp.hovered() {
+                            t.hover
+                        } else {
+                            Color32::TRANSPARENT
+                        };
+                        ui.painter().rect_filled(r, CornerRadius::same(5), bg);
+                        paint(ui.painter());
+                        resp.clicked()
+                    };
+                    let close_rect = icon_at(0);
+                    if icon_btn(ui, close_rect, false, Id::unique("t3_close"), tr("Close"), &|p| {
+                        icons::paint(p, Rect::from_center_size(close_rect.center(), Vec2::splat(16.0)), Icon::Close, t.icon);
+                    }) {
+                        app.ui.t3_popover = None;
+                    }
+                    let set_rect = icon_at(1);
+                    app.ui.t3_settings_btn_rect = Some(set_rect);
+                    if icon_btn(ui, set_rect, app.ui.t3_settings_open, Id::unique("t3_settings_btn"), tr("Settings"), &|p| {
+                        icons::paint(p, Rect::from_center_size(set_rect.center(), Vec2::splat(16.0)), Icon::Adjust, t.icon);
+                    }) {
+                        app.ui.t3_settings_open = !app.ui.t3_settings_open;
+                    }
+                    let pivot_rect = icon_at(2);
+                    if icon_btn(ui, pivot_rect, app.ui.t3_origin_open, Id::unique("t3_pivot_btn"), tr("Rotation point"), &|p| {
+                        crosshair(p, pivot_rect.center(), t.icon);
+                    }) {
+                        app.ui.t3_origin_open = !app.ui.t3_origin_open;
+                    }
                     ui.add_space(4.0);
                     // The pivot picker's panel: the nine points on the layer, the precise X/Y.
                     if app.ui.t3_origin_open {
@@ -379,11 +397,32 @@ pub(crate) fn settings_popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId
         .ui
         .t3_settings_pop
         .take()
-        .unwrap_or_else(|| Popover::with_id(Id::unique("t3_settings"), tr("Settings")).width(settings_w).pad(10.0));
+        .unwrap_or_else(|| Popover::with_id(Id::unique("t3_settings"), tr("Settings")).width(settings_w).pad(10.0).no_header());
     pop = pop.at(at).close_on_outside(true);
-    let closed = pop.show(ctx, crate::popover::Open::At(at), crate::popover::Hold { rects: &[], escape: false }, |ui| {
+    let hold: Vec<Rect> = app.ui.t3_settings_btn_rect.into_iter().collect();
+    let closed = pop.show(ctx, crate::popover::Open::At(at), crate::popover::Hold { rects: &hold, escape: false }, |ui| {
         ui.set_width(settings_w - 20.0);
-        row(ui, 36.0, |ui| {
+        // The header: the title at the top left and the close at the top right (the reference's
+        // settings window), then a hairline across the panel.
+        let head = menu_row_rect(ui, 40.0, |ui| {
+            let title = ui.painter().layout_no_wrap(tr("Settings").to_string(), semibold(13.0), t.menu_text);
+            let at = pos2(ui.cursor().min.x + 2.0, ui.cursor().center().y - title.size().y / 2.0);
+            ui.painter().galley(at, title, t.menu_text);
+        });
+        let x_rect = Rect::from_min_size(pos2(head.max.x - 8.0 - 24.0, head.center().y - 12.0), vec2(24.0, 24.0));
+        let x_resp = ui.interact(x_rect, Id::unique("t3_settings_close"), Sense::click());
+        crate::a11y::describe(&x_resp, tr("Close"));
+        if x_resp.hovered() {
+            ui.painter().rect_filled(x_rect, CornerRadius::same(5), t.hover);
+        }
+        icons::paint(ui.painter(), Rect::from_center_size(x_rect.center(), Vec2::splat(16.0)), Icon::Close, t.icon);
+        if x_resp.clicked() {
+            app.ui.t3_settings_open = false;
+        }
+        let (line, _) = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
+        ui.painter().rect_filled(line, CornerRadius::ZERO, t.border);
+        ui.add_space(8.0);
+        row(ui, 40.0, |ui| {
             // The label.
             let label = ui.painter().layout_no_wrap(tr("Backface").to_string(), regular(12.0), t.menu_text);
             let cy = ui.cursor().center().y - label.size().y / 2.0;
@@ -391,10 +430,11 @@ pub(crate) fn settings_popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId
             ui.add_space(56.0);
             // Figma's two-segment switch: "—" (the back hidden) and "✓" (shown), the picked
             // segment filled and outlined.
-            let seg_w = 74.0;
+            let seg_w = 66.0;
             let seg_h = 34.0;
             let (box_rect, _) = ui.allocate_exact_size(vec2(seg_w * 2.0, seg_h), Sense::click());
-            ui.painter().rect_stroke(box_rect, CornerRadius::same(6), Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
+            // The switch's well, then the picked half as an outlined rounded rect (the reference).
+            ui.painter().rect_filled(box_rect, CornerRadius::same(8), t.field);
             let halves = [
                 (Rect::from_min_size(box_rect.min, vec2(seg_w, seg_h)), false, false),
                 (Rect::from_min_size(pos2(box_rect.min.x + seg_w, box_rect.min.y), vec2(seg_w, seg_h)), true, true),
@@ -403,10 +443,10 @@ pub(crate) fn settings_popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId
                 let active = backface == shows;
                 let resp = ui.interact(half, Id::unique(("t3_backface", shows)), Sense::click());
                 if active {
-                    ui.painter().rect_filled(half.shrink(2.0), CornerRadius::same(5), t.field);
-                    ui.painter().rect_stroke(half.shrink(2.0), CornerRadius::same(5), Stroke::new(1.0, t.field_hover_border), egui::StrokeKind::Inside);
+                    ui.painter().rect_filled(half.shrink(2.0), CornerRadius::same(6), t.menu);
+                    ui.painter().rect_stroke(half.shrink(2.0), CornerRadius::same(6), Stroke::new(1.0, t.field_hover_border), egui::StrokeKind::Inside);
                 } else if resp.hovered() {
-                    ui.painter().rect_filled(half.shrink(2.0), CornerRadius::same(5), t.hover);
+                    ui.painter().rect_filled(half.shrink(2.0), CornerRadius::same(6), t.hover);
                 }
                 let col = if active { t.menu_text } else { t.icon_secondary };
                 if shows {
