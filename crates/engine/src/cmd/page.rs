@@ -228,29 +228,22 @@ pub fn specs() -> Vec<CommandSpec> {
         spec!(
             "guide.removeAll",
             "Remove all guides",
-            "{vertical?} (the current page's guides, in frames too; no `vertical`: both sorts) → {removed}",
+            "{vertical?, frame? | page?} (no frame: the page's own guides, outside every frame; a frame: that frame's) → {removed}",
             true,
             |s, p| {
+                let owner = guide_owner(s, "guide.removeAll", p)?;
                 let vertical = boolean(p, "vertical");
-                let page = s.page()?;
-                let ids = s.doc()?.subtree(page);
-                let mut removed = 0;
-                {
-                    let doc = s.doc_mut()?;
-                    for id in ids {
-                        let Ok(n) = doc.get_mut(id) else { continue };
-                        let before = n.guides().len();
-                        if before == 0 {
-                            continue;
-                        }
-                        // `vertical: false` takes the lines that run across (dragged from the top
-                        // ruler), `true` the ones that run down; with neither, every guide goes.
-                        n.guides_mut().retain(|g| vertical.is_some_and(|v| g.vertical != v));
-                        removed += before - n.guides().len();
-                    }
-                }
+                let n = s.doc_mut()?.get_mut(owner)?;
+                let before = n.guides().len();
+                // `vertical: false` takes the lines that run across (dragged from the top ruler),
+                // `true` the ones that run down; with neither, every guide of that owner goes.
+                n.guides_mut().retain(|g| vertical.is_some_and(|v| g.vertical != v));
+                let removed = before - n.guides().len();
                 if removed > 0 {
-                    s.ds_mut()?.guide = None;
+                    let ds = s.ds_mut()?;
+                    if ds.guide.is_some_and(|(o, _)| o == owner) {
+                        ds.guide = None;
+                    }
                 }
                 Ok(json!({"removed": removed}))
             }

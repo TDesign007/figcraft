@@ -45,25 +45,27 @@ fn guides_on_a_frame_are_kept_in_its_coordinates() {
 }
 
 #[test]
-fn remove_all_guides_takes_one_orientation_across_the_page_and_its_frames() {
+fn remove_all_guides_takes_one_orientation_in_the_page_or_a_frame() {
     let (mut s, frame, _) = setup();
     let page = s.page().unwrap();
     s.execute("guide.add", &json!({"vertical": true, "offset": 10})).unwrap();
     s.execute("guide.add", &json!({"vertical": false, "offset": 20})).unwrap();
     s.execute("guide.add", &json!({"frame": frame, "vertical": true, "offset": 30})).unwrap();
     s.execute("guide.add", &json!({"frame": frame, "vertical": false, "offset": 40})).unwrap();
-    // The top ruler's menu takes the horizontal guides, on the page and in its frames.
-    let removed = s.execute("guide.removeAll", &json!({"vertical": false})).unwrap()["removed"].as_u64();
-    assert_eq!(removed, Some(2));
+    // No frame named: the page's own guides (outside every frame), the frames keep theirs.
+    assert_eq!(s.execute("guide.removeAll", &json!({"vertical": false})).unwrap()["removed"], json!(1));
     assert_eq!(guides(&s, page), vec![(true, 10.0)]);
-    assert_eq!(guides(&s, frame), vec![(true, 30.0)]);
-    // One undo step brings them back.
+    assert_eq!(guides(&s, frame), vec![(true, 30.0), (false, 40.0)]);
+    // One undo step brings it back.
     s.undo().unwrap();
+    assert_eq!(guides(&s, page), vec![(true, 10.0), (false, 20.0)]);
+    // A named frame: that frame's guides only; the page keeps its own.
+    assert_eq!(s.execute("guide.removeAll", &json!({"frame": frame, "vertical": true})).unwrap()["removed"], json!(1));
+    assert_eq!(guides(&s, frame), vec![(false, 40.0)]);
     assert_eq!(guides(&s, page).len(), 2);
-    assert_eq!(guides(&s, frame).len(), 2);
-    // With no `vertical`: every guide goes.
-    assert_eq!(s.execute("guide.removeAll", &json!({})).unwrap()["removed"], json!(4));
-    assert!(guides(&s, page).is_empty() && guides(&s, frame).is_empty());
+    // Every guide of the frame with no `vertical`.
+    assert_eq!(s.execute("guide.removeAll", &json!({"frame": frame})).unwrap()["removed"], json!(1));
+    assert!(guides(&s, frame).is_empty());
 }
 
 #[test]

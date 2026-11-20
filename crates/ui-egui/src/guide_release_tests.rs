@@ -124,6 +124,32 @@ fn right_clicking_a_ruler_offers_removing_its_guides_and_hiding_the_rulers() {
     u.button(item, false);
     u.frame(vec![]);
     assert_eq!(orientations(&u), vec![true], "the horizontal guide went, the vertical stays");
+    // With one top-level frame selected the same entry takes that frame's horizontal guide (and
+    // only it): the page's own guides are left alone.
+    let f = figcraft_doc::NodeId(
+        u.app.session.execute("frame.create", &json!({"x": 0.0, "y": 0.0, "width": 100.0, "height": 100.0})).unwrap()["id"].as_u64().unwrap(),
+    );
+    u.app.session.execute("guide.add", &json!({"frame": f, "vertical": false, "offset": 10.0})).unwrap();
+    u.app.session.execute("select.set", &json!({"ids": [f]})).unwrap();
+    u.frame(vec![]);
+    right_click(&mut u, Pos2::new(r.min.x + 100.0, r.min.y + 8.0));
+    let shapes = flat(&u.frame_output(vec![]).shapes);
+    let item = crate::live_tests::text_center(&shapes, "Remove all horizontal guides");
+    u.button(item, true);
+    u.button(item, false);
+    u.frame(vec![]);
+    assert!(u.app.session.doc().unwrap().node(f).unwrap().guides().is_empty(), "the selected frame's horizontal guide went");
+    assert_eq!(orientations(&u), vec![true], "the page's vertical guide stays");
+    // Nothing of that sort left in the frame: the entry is dimmed and does nothing.
+    u.app.session.execute("guide.add", &json!({"frame": f, "vertical": true, "offset": 5.0})).unwrap();
+    u.frame(vec![]);
+    right_click(&mut u, Pos2::new(r.min.x + 100.0, r.min.y + 8.0));
+    let shapes = flat(&u.frame_output(vec![]).shapes);
+    let item = crate::live_tests::text_center(&shapes, "Remove all horizontal guides");
+    u.button(item, true);
+    u.button(item, false);
+    u.frame(vec![]);
+    assert_eq!(u.app.session.doc().unwrap().node(f).unwrap().guides().len(), 1, "the dimmed entry removes nothing");
     // The left ruler's menu names the vertical guides, and Hide rulers turns them off.
     right_click(&mut u, Pos2::new(r.min.x + 8.0, r.min.y + 120.0));
     let shapes = flat(&u.frame_output(vec![]).shapes);

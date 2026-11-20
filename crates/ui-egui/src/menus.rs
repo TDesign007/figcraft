@@ -463,10 +463,18 @@ pub fn popups(app: &mut FigApp, ctx: &egui::Context) {
                 }
                 // A ruler's right-click menu: remove that ruler's guides and hide the rulers.
                 let ruler = app.ui.ruler_menu;
+                // With one top-level frame selected the menu acts on its guides; with nothing
+                // selected it acts on the page's own guides, outside every frame.
+                let ruler_frame = app.session.doc().ok().and_then(|doc| match app.session.selection().as_slice() {
+                    [id] if doc.top_level_frame(*id) == Some(*id) => Some(*id),
+                    _ => None,
+                });
                 let ruler_has = ruler.is_some_and(|vertical| {
-                    let Ok(page) = app.session.page() else { return false };
-                    app.session.doc().ok().is_some_and(|doc| {
-                        doc.subtree(page).iter().any(|id| doc.node(*id).is_some_and(|n| n.guides().iter().any(|g| g.vertical == vertical)))
+                    app.session.doc().ok().is_some_and(|doc| match ruler_frame {
+                        Some(f) => doc.node(f).is_some_and(|n| n.guides().iter().any(|g| g.vertical == vertical)),
+                        None => {
+                            app.session.page().ok().is_some_and(|page| doc.node(page).is_some_and(|n| n.guides().iter().any(|g| g.vertical == vertical)))
+                        }
                     })
                 });
                 let has_sel = !ids.is_empty();
@@ -629,8 +637,14 @@ pub fn popups(app: &mut FigApp, ctx: &egui::Context) {
                     if item(ui, label, sc, enabled, false, &t) {
                         match *id {
                             "guide.removeAll" => {
-                                if let Some(vertical) = ruler {
-                                    app.run("guide.removeAll", json!({"vertical": vertical}));
+                                // Dimmed when the scoped page or frame has none: the row still
+                                // takes a click, so the command stays off for it.
+                                if ruler_has && let Some(vertical) = ruler {
+                                    let mut params = json!({"vertical": vertical});
+                                    if let Some(f) = ruler_frame {
+                                        params["frame"] = json!(f);
+                                    }
+                                    app.run("guide.removeAll", params);
                                 }
                             }
                             // The rulers are on (the menu came from one): this always hides them.
