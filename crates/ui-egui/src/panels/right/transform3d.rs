@@ -98,10 +98,11 @@ pub(crate) fn popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId, i: usiz
                     row(ui, 34.0, |ui| {
                         cube_icon(ui, t);
                         ui.add_space(6.0);
+                        // The title centres on the row like the icon and the header's buttons: its own height
+// allocated through the row's centred layout (painted at the cursor's top it sat high).
                         let title = ui.painter().layout_no_wrap(tr("3D transform").to_string(), semibold(12.0), t.text);
-                        let title_rect = Rect::from_min_size(ui.cursor().min, title.mesh_bounds.size());
+                        let (title_rect, _) = ui.allocate_exact_size(title.size(), Sense::hover());
                         ui.painter().galley(title_rect.min, title, t.text);
-                        ui.advance_cursor_after_rect(title_rect);
                         ui.add_space(6.0);
                         // The badge only where it clears the pinned icons (the three take the
                         // right 90 points of the row); it elides to what is left.

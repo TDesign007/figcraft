@@ -109,6 +109,11 @@ fn the_popover_header_reads_on_the_light_panel() {
         })
         .expect("the popover's title is drawn");
     assert_eq!(title.fallback_color, tokens.text, "the header's title reads on the light panel");
+    // The title and the header's icons share one horizontal centre line (the mark too: it is
+    // allocated in the same centred row).
+    let icons = u.app.ui.t3_pivot_btn_rect.unwrap().center().y;
+    let text = title.pos.y + title.galley.size().y / 2.0;
+    assert!((text - icons).abs() < 1.0, "the title is level with the header's icons: {text} vs {icons}");
 }
 
 #[test]
