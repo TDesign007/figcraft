@@ -90,6 +90,28 @@ fn the_popover_opens_beside_the_row_with_the_preview_and_the_fields() {
 }
 
 #[test]
+fn the_popover_header_reads_on_the_light_panel() {
+    let (mut u, r) = rect_with_effect(&json!({"type": "transform3d", "rotateX": -29.0}));
+    u.app.ui.t3_popover = Some((r, 0, row_rect()));
+    // Past the fade-in, so the title paints in its settled token colour.
+    for _ in 0..30 {
+        u.frame(vec![]);
+    }
+    let shapes = flat(&u.frame_output(vec![]).shapes);
+    let panel = u.app.ui.t3_popover_pop.as_ref().unwrap().rect;
+    let tokens = crate::theme::Tokens::get(&u.ctx);
+    let title = shapes
+        .iter()
+        .find_map(|shape| match shape {
+            // The row in the panel draws the same label; the popover's title is the one inside it.
+            Shape::Text(t) if t.galley.text() == "3D transform" && panel.contains(t.pos) => Some(t),
+            _ => None,
+        })
+        .expect("the popover's title is drawn");
+    assert_eq!(title.fallback_color, tokens.text, "the header's title reads on the light panel");
+}
+
+#[test]
 fn the_reset_button_is_drawn_at_the_preview_corner() {
     let (mut u, r) = rect_with_effect(&json!({"type": "transform3d", "rotateX": -29.0, "rotateY": -45.0, "depth": 80.0}));
     u.app.ui.t3_popover = Some((r, 0, row_rect()));

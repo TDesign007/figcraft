@@ -98,12 +98,17 @@ pub(crate) fn popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId, i: usiz
                     row(ui, 34.0, |ui| {
                         cube_icon(ui, t);
                         ui.add_space(6.0);
-                        let title = ui.painter().layout_no_wrap(tr("3D transform").to_string(), semibold(12.0), t.menu_text);
+                        let title = ui.painter().layout_no_wrap(tr("3D transform").to_string(), semibold(12.0), t.text);
                         let title_rect = Rect::from_min_size(ui.cursor().min, title.mesh_bounds.size());
-                        ui.painter().galley(title_rect.min, title, t.menu_text);
+                        ui.painter().galley(title_rect.min, title, t.text);
                         ui.advance_cursor_after_rect(title_rect);
                         ui.add_space(6.0);
-                        name_pill(ui, t, &name);
+                        // The badge only where it clears the pinned icons (the three take the
+                        // right 90 points of the row); it elides to what is left.
+                        let room = (ui.max_rect().max.x - 96.0 - ui.cursor().min.x).max(0.0);
+                        if room >= 40.0 {
+                            name_pill(ui, t, &name, room.min(84.0));
+                        }
                     });
                     // The three icons pinned to the header's right edge (painted and hit-tested
                     // at fixed places, so a long name can never cover them): the pivot picker,
@@ -493,8 +498,10 @@ fn cube_icon(ui: &mut egui::Ui, t: &Tokens) {
     let top = [pos2(c.x, c.y - s), pos2(c.x + s, c.y - s / 2.0), pos2(c.x, c.y), pos2(c.x - s, c.y - s / 2.0)];
     let left = [pos2(c.x - s, c.y - s / 2.0), pos2(c.x, c.y), pos2(c.x, c.y + s), pos2(c.x - s, c.y + s / 2.0)];
     let right = [pos2(c.x + s, c.y - s / 2.0), pos2(c.x, c.y), pos2(c.x, c.y + s), pos2(c.x + s, c.y + s / 2.0)];
+    // The mark shades from the theme's secondary ink, so its faces read on the light and the
+    // dark panel alike (menu_text is white: invisible on the light one).
     let shade = |k: f32| {
-        let v = (f32::from(t.menu_text.r()) * k).round().clamp(70.0, 235.0) as u8;
+        let v = (f32::from(t.icon_secondary.r()) * k).round().clamp(70.0, 235.0) as u8;
         Color32::from_gray(v)
     };
     for (face, k) in [(top, 1.0), (left, 0.6), (right, 0.8)] {
@@ -502,13 +509,15 @@ fn cube_icon(ui: &mut egui::Ui, t: &Tokens) {
     }
 }
 
-/// The layer's name in a rounded pill (truncated to what fits).
-fn name_pill(ui: &mut egui::Ui, t: &Tokens, name: &str) {
-    let galley = ui.painter().layout_no_wrap(name.to_string(), regular(11.0), t.menu_text);
-    let w = galley.size().x.min(72.0);
+/// The layer's name in a rounded pill, elided to `max_w`.
+fn name_pill(ui: &mut egui::Ui, t: &Tokens, name: &str, max_w: f32) {
+    let inner = (max_w - 12.0).max(0.0);
+    let text = crate::widgets::elide_font(ui, name, inner, regular(11.0));
+    let galley = ui.painter().layout_no_wrap(text, regular(11.0), t.text_secondary);
+    let w = galley.size().x.min(inner);
     let (r, _) = ui.allocate_exact_size(vec2(w + 12.0, 20.0), Sense::hover());
     ui.painter().rect_stroke(r, CornerRadius::same(5), Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
-    ui.painter().galley(pos2(r.min.x + 6.0, r.center().y - galley.size().y / 2.0), galley, t.menu_text);
+    ui.painter().galley(pos2(r.min.x + 6.0, r.center().y - galley.size().y / 2.0), galley, t.text_secondary);
 }
 
 /// The rotation-point mark: a crosshair circle with four ticks (the reference's ⊕).
