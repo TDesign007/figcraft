@@ -1,4 +1,4 @@
-use super::menu::{context_popup, menu_check, menu_item, menu_popup, row, row_context_menu, row_rect, row_target};
+use super::menu::{add_menu_popup, context_popup, menu_check, menu_item, menu_popup, row, row_context_menu, row_rect, row_target};
 use super::{
     Blur, BlurType, Document, Effect, EffectKind, FieldEdit, FigApp, Glass, GridAlign, GridKind, Icon, Id, LayoutGrid, Lead, ListDrag,
     MAX_BLUR_RADIUS, NodeId, Noise, NoiseMode, Paint, Perspective, Sense, Shadow, StyleSlot, Texture, Transform3d, Ui, VariableType, common, icons, json, move_flags,
@@ -12,13 +12,39 @@ pub(super) fn effects(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[Node
     let ids = sel.to_vec();
     let list = common(doc, sel, |n| n.effects.clone());
     let empty = list.as_ref().is_none_or(|l| l.is_empty());
-    let (clicked, header) = widgets::section_header_resp(ui, tr("Effects"), &[(Icon::Styles, tr("Styles")), (Icon::Plus, tr("Add effect"))], empty);
-    if let Some(i) = clicked {
-        if i == 1 {
-            app.run("effect.add", json!({"ids": ids, "type": "dropShadow"}));
-        } else {
-            style_picker::open(app, ui, &ids, StyleSlot::Effect);
-        }
+    let (clicked, header, buttons) =
+        widgets::section_header_buttons(ui, tr("Effects"), &[(Icon::Styles, tr("Styles")), (Icon::Plus, tr("Add effect"))], empty);
+    if clicked == Some(0) {
+        style_picker::open(app, ui, &ids, StyleSlot::Effect);
+    }
+    // The + lists the effect types (the target app's add menu). Picking 3D transform adds the
+    // effect and opens its popover at once, anchored at the button that added it.
+    if let Some(add) = buttons.get(1) {
+        // An empty section's header is a + too: its click (the button's response does not see it)
+        // toggles the same menu.
+        let toggle = add.clicked() || (empty && clicked == Some(1));
+        let at = add.rect;
+        add_menu_popup(add, toggle).show(|ui| {
+            let mut picked = None;
+            for (label, ty) in Effect::TYPES {
+                if menu_item(ui, tr(label), "") {
+                    picked = Some(ty);
+                }
+            }
+            if let Some(ty) = picked {
+                let first = ids.first().copied();
+                let before = first.and_then(|id| app.session.doc().ok().and_then(|d| d.node(id).map(|n| n.effects.len())));
+                app.run("effect.add", json!({"ids": ids, "type": ty}));
+                if ty == "transform3d"
+                    && let (Some(id), Some(index)) = (first, before)
+                {
+                    app.ui.t3_popover = Some((id, index, at));
+                    app.ui.t3_settings_open = false;
+                    app.ui.t3_origin_open = false;
+                }
+                ui.close();
+            }
+        });
     }
     context_popup(&header).show(|ui| {
         if app.session.clipboard.effect.is_some() && menu_item(ui, tr("Paste effect"), "") {

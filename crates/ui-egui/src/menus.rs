@@ -645,6 +645,7 @@ pub fn popups(app: &mut FigApp, ctx: &egui::Context) {
     } else {
         app.ui.t3_settings_open = false;
         app.ui.t3_origin_open = false;
+        app.ui.t3_popover_shown = false;
     }
 }
 

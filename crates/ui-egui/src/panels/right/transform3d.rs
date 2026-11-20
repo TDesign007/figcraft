@@ -28,16 +28,19 @@ const TURN_PER_PT: f64 = 0.55;
 pub(crate) fn popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId, i: usize, row_rect: egui::Rect, t: &Tokens) {
     let Some(name) = app.session.doc().ok().and_then(|doc| doc.node(id).map(|n| n.name.clone())) else {
         app.ui.t3_popover = None;
+        app.ui.t3_popover_shown = false;
         return;
     };
     let Some(effect) = app.session.doc().ok().and_then(|doc| doc.node(id)).and_then(|n| n.effects.get(i).cloned()) else {
         app.ui.t3_popover = None;
+        app.ui.t3_popover_shown = false;
         return;
     };
     let e = if effect.visible && matches!(effect.kind, EffectKind::Transform3d(_)) {
         effect.clone()
     } else {
         app.ui.t3_popover = None;
+        app.ui.t3_popover_shown = false;
         return;
     };
     let t3 = match &e.kind {
@@ -87,7 +90,9 @@ pub(crate) fn popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId, i: usiz
         .take()
         .unwrap_or_else(|| Popover::with_id(Id::unique("t3_popover"), tr("3D transform")).width(WIDTH).pad(10.0).no_header());
     // The anchor follows the row and the panel every frame (the chrome persists between frames).
-    pop = pop.at(at).close_on_outside(true);
+    // Its opening frame spares the press that opened it (a click that adds the effect from the
+    // add menu lands outside the panel and would otherwise close it on that same frame).
+    pop = pop.at(at).close_on_outside(app.ui.t3_popover_shown);
     let mut hold: Vec<egui::Rect> = vec![held];
     hold.extend(app.ui.t3_settings_rect);
     hold.extend(app.ui.t3_pivot_rect);
@@ -230,8 +235,10 @@ pub(crate) fn popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId, i: usiz
                     ui.add_space(8.0);
                 });
     app.ui.t3_popover_pop = Some(pop);
+    app.ui.t3_popover_shown = true;
     if closed {
         app.ui.t3_popover = None;
+        app.ui.t3_popover_shown = false;
     }
 }
 
@@ -408,7 +415,9 @@ pub(crate) fn settings_popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId
         .t3_settings_pop
         .take()
         .unwrap_or_else(|| Popover::with_id(Id::unique("t3_settings"), tr("Settings")).width(settings_w).pad(10.0).no_header());
-    pop = pop.at(at).close_on_outside(true);
+    // Its opening frame spares the press that opened it (a click that adds the effect from the
+    // add menu lands outside the panel and would otherwise close it on that same frame).
+    pop = pop.at(at).close_on_outside(app.ui.t3_popover_shown);
     let mut hold: Vec<Rect> = app.ui.t3_settings_btn_rect.into_iter().collect();
     hold.extend(app.ui.t3_popover_pop.as_ref().map(|p| p.rect));
     hold.extend(app.ui.t3_pivot_rect);
@@ -543,7 +552,9 @@ pub(crate) fn pivot_popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId, i
         .t3_pivot_pop
         .take()
         .unwrap_or_else(|| Popover::with_id(Id::unique("t3_pivot"), tr("Rotation point")).width(pivot_w).pad(10.0).no_header());
-    pop = pop.at(at).close_on_outside(true);
+    // Its opening frame spares the press that opened it (a click that adds the effect from the
+    // add menu lands outside the panel and would otherwise close it on that same frame).
+    pop = pop.at(at).close_on_outside(app.ui.t3_popover_shown);
     let mut hold: Vec<Rect> = app.ui.t3_pivot_btn_rect.into_iter().collect();
     hold.extend(app.ui.t3_popover_pop.as_ref().map(|p| p.rect));
     hold.extend(app.ui.t3_settings_pop.as_ref().map(|p| p.rect));

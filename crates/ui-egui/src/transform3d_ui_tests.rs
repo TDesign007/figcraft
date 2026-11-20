@@ -226,6 +226,44 @@ fn the_more_button_opens_a_readable_backface_popover() {
 }
 
 #[test]
+fn the_add_button_lists_the_types_and_opens_the_3d_popover() {
+    let mut s = Session::new();
+    let r = NodeId(s.execute("shape.rectangle", &json!({"x": 0.0, "y": 0.0, "width": 100.0, "height": 100.0})).unwrap()["id"].as_u64().unwrap());
+    s.execute("select.set", &json!({"ids": [r]})).unwrap();
+    let mut u = Ui::new(s);
+    // The + at the Effects header's right end: find it along the header row (its x depends on the
+// panel's inner margins), right to left.
+    let shapes = flat(&u.frame_output(vec![]).shapes);
+    let header = crate::live_tests::text_center(&shapes, "Effects").y;
+    let panel = u.app.ui.right_panel_rect.expect("the Design panel draws");
+    // The + sits at the header's right end (8 + 24 in from the panel's edge).
+    let at = Pos2::new(panel.right() - 20.0, header);
+    u.button(at, true);
+    u.button(at, false);
+    u.frame(vec![]);
+    let shapes = flat(&u.frame_output(vec![]).shapes);
+    assert!(has_text(&shapes, "Drop shadow"), "the + opens the effects menu");
+    let shapes = flat(&u.frame_output(vec![]).shapes);
+    for label in ["Drop shadow", "Layer blur", "Background blur", "Noise", "Texture", "Glass", "3D transform"] {
+        assert!(has_text(&shapes, label), "the add menu lists {label}");
+    }
+    // Picking 3D transform adds the effect and opens its popover in the same interaction. The
+    // press and release share a frame here (the quickest click): the opening frame must not read
+    // that press as an outside press and close the new popover.
+    let at = crate::live_tests::text_center(&shapes, "3D transform");
+    let press = |pressed: bool| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+    u.frame(vec![egui::Event::PointerMoved(at), press(true), press(false)]);
+    u.frame(vec![]);
+    assert!(u.app.ui.t3_popover.is_some(), "picking 3D transform opens its popover");
+    let n = u.app.session.doc().unwrap().node(r).unwrap().clone();
+    assert!(
+        matches!(n.effects.last().map(|e| &e.kind), Some(figcraft_doc::EffectKind::Transform3d(_))),
+        "the 3D transform effect is added"
+    );
+    assert!(u.app.ui.t3_popover_pop.as_ref().is_some_and(|p| p.rect.is_positive()), "the popover is drawn");
+}
+
+#[test]
 fn the_pivot_picker_is_its_own_popover() {
     let (mut u, r) = rect_with_effect(&json!({"type": "transform3d", "rotateX": 10.0, "rotateY": 20.0}));
     u.app.ui.t3_popover = Some((r, 0, row_rect()));

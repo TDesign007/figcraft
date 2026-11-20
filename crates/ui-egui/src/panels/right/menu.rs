@@ -48,6 +48,22 @@ pub fn menu_popup(anchor: &egui::Response) -> egui::Popup<'static> {
     egui::Popup::menu(anchor).width(anchor.rect.width().max(MENU_MIN_W)).style(menu_style)
 }
 
+/// The add menu a section's `+` opens: a menu-width list whose right edge lines up with the
+/// button's (it opens down and to the left, staying inside the panel and the window).
+///
+/// `toggle` opens/closes it: the caller knows a click on an empty section's header counts as its
+/// `+` (the anchor response alone would not see it). It must be anchored on the button, never on
+/// the header: the header's own popup id belongs to its right-click menu.
+pub fn add_menu_popup(anchor: &egui::Response, toggle: bool) -> egui::Popup<'static> {
+    egui::Popup::from_response(anchor)
+        .kind(egui::PopupKind::Menu)
+        .layout(egui::Layout::top_down_justified(egui::Align::Min))
+        .style(menu_style)
+        .width(200.0)
+        .align(egui::RectAlign::BOTTOM_END)
+        .open_memory(toggle.then_some(egui::SetOpenCommand::Toggle))
+}
+
 /// A context menu (secondary click on `resp`) sized like [`menu_popup`].
 pub fn context_popup(resp: &egui::Response) -> egui::Popup<'static> {
     egui::Popup::context_menu(resp).width(MENU_MIN_W).style(menu_style)

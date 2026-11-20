@@ -1001,6 +1001,18 @@ pub fn section_header(ui: &mut Ui, title: &str, buttons: &[(Icon, &str)], dim: b
 
 /// [`section_header`], with the header's own response for a right-click menu.
 pub fn section_header_resp(ui: &mut Ui, title: &str, buttons: &[(Icon, &str)], dim: bool) -> (Option<usize>, egui::Response) {
+    let (clicked, header, _) = section_header_buttons(ui, title, buttons, dim);
+    (clicked, header)
+}
+
+/// [`section_header_resp`], also returning each button's response in `buttons` order — a `+`'s
+/// to anchor the menu it opens.
+pub fn section_header_buttons(
+    ui: &mut Ui,
+    title: &str,
+    buttons: &[(Icon, &str)],
+    dim: bool,
+) -> (Option<usize>, egui::Response, Vec<egui::Response>) {
     let t = Tokens::get(ui.ctx());
     let w = ui.available_width();
     let (rect, resp) = ui.allocate_exact_size(vec2(w, 40.0), Sense::click());
@@ -1018,6 +1030,7 @@ pub fn section_header_resp(ui: &mut Ui, title: &str, buttons: &[(Icon, &str)], d
     );
     let mut out = None;
     let mut x = rect.max.x - PAD_RIGHT;
+    let mut responses = Vec::with_capacity(buttons.len());
     for (i, (icon, tip)) in buttons.iter().enumerate().rev() {
         let r = Rect::from_min_size(pos2(x - 24.0, rect.center().y - 12.0), vec2(24.0, 24.0));
         let resp = ui.interact(r, ui.scope_id().with(("hdr", title, i)), Sense::click()).tip(*tip);
@@ -1028,13 +1041,15 @@ pub fn section_header_resp(ui: &mut Ui, title: &str, buttons: &[(Icon, &str)], d
         if resp.clicked() {
             out = Some(i);
         }
+        responses.push(resp);
         x -= 28.0;
     }
     // An empty section's whole header adds its item, not only its `+` button.
     if out.is_none() && dim && resp.clicked() {
         out = buttons.iter().position(|(icon, _)| *icon == Icon::Plus);
     }
-    (out, resp)
+    responses.reverse();
+    (out, resp, responses)
 }
 
 /// Runs `add` as the group of buttons at a row's right end: two 24 pt buttons 4 pt apart, the last
