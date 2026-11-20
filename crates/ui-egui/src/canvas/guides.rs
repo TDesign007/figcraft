@@ -310,24 +310,32 @@ pub fn end_released(ctx: &egui::Context) {
     });
 }
 
-/// The dragged guide's preview line: across the whole canvas along its axis. A frame guide's own
-/// line spans only its frame, so as a preview it would show nothing outside the frame — the
-/// target app keeps the dashed line running past the frame's edges while the guide is dragged.
-fn preview_line(app: &FigApp, g: &Placed, r: Rect) -> Vec<Pos2> {
-    let [a, b] = segment(app, g, r);
+/// The line's parts outside its own span, out to the canvas edges along its axis: what a frame
+/// guide would cover if it ran past the frame. Drawn dashed (the target app's caliper line: solid
+/// where the guide belongs, dashed beyond it); a diagonal (a rotated frame's guide) has none.
+fn beyond([a, b]: [Pos2; 2], r: Rect) -> [Option<[Pos2; 2]>; 2] {
     let d = b - a;
     if d.x.abs() <= 0.5 {
-        vec![pos2(a.x, r.min.y), pos2(a.x, r.max.y)]
+        let (lo, hi) = (a.y.min(b.y), a.y.max(b.y));
+        [
+            (lo > r.min.y + 0.5).then(|| [pos2(a.x, r.min.y), pos2(a.x, lo)]),
+            (hi < r.max.y - 0.5).then(|| [pos2(a.x, hi), pos2(a.x, r.max.y)]),
+        ]
     } else if d.y.abs() <= 0.5 {
-        vec![pos2(r.min.x, a.y), pos2(r.max.x, a.y)]
+        let (lo, hi) = (a.x.min(b.x), a.x.max(b.x));
+        [
+            (lo > r.min.x + 0.5).then(|| [pos2(r.min.x, a.y), pos2(lo, a.y)]),
+            (hi < r.max.x - 0.5).then(|| [pos2(hi, a.y), pos2(r.max.x, a.y)]),
+        ]
     } else {
-        vec![a, b]
+        [None, None]
     }
 }
 
 /// Draw the page's and its frames' guides (under the rulers) and the one being dragged with its
-/// position. Hovered guides are dashed (the target app's hover state); the guide being dragged is
-/// a dashed preview across the canvas, gone on release.
+/// position. A guide is solid where it belongs (across its frame, or the canvas for a page guide);
+/// while it is dragged, and while it is hovered, its part past the frame is dashed — after the
+/// release that part is gone, so the hover dashes it again (the target app's caliper line).
 pub fn draw(app: &FigApp, painter: &egui::Painter) {
     if !rulers_on(app) {
         return;
@@ -341,21 +349,34 @@ pub fn draw(app: &FigApp, painter: &egui::Painter) {
     };
     let hover = if drag.is_none() { ctx.input(|i| i.pointer.hover_pos()).filter(|p| r.contains(*p)).and_then(|p| guide_at(app, p)) } else { None };
     let selected = app.session.ds().ok().and_then(|d| d.selected_guide());
+    let dashed = |painter: &egui::Painter, seg: [Pos2; 2], w: f32| {
+        painter.extend(Shape::dashed_line(&seg, Stroke::new(w, GUIDE), 4.0, 3.0));
+    };
     for g in placed_guides(app) {
         if Some((g.owner, g.index)) == moving {
             continue;
         }
         let line = segment(app, &g, r);
         let hovered = hover == Some(g);
-        if hovered || selected == Some((g.owner, g.index)) {
-            painter.extend(Shape::dashed_line(&line, Stroke::new(if hovered { 2.0 } else { 1.5 }, GUIDE), 4.0, 3.0));
+        let picked = selected == Some((g.owner, g.index));
+        painter.line_segment(line, Stroke::new(if hovered || picked { 2.0 } else { 1.0 }, GUIDE));
+        if hovered {
+            // Past the frame: nothing when idle, dashed on hover.
+            for seg in beyond(line, r).into_iter().flatten() {
+                dashed(painter, seg, 1.0);
+            }
+        }
+        if hovered || picked {
             label(app, painter, r, &g);
-        } else {
-            painter.line_segment(line, Stroke::new(1.0, GUIDE));
         }
     }
     if let Some(g) = ctx.data(|d| d.get_temp::<Placed>(preview_id())) {
-        painter.extend(Shape::dashed_line(&preview_line(app, &g, r), Stroke::new(1.0, GUIDE), 4.0, 3.0));
+        let line = segment(app, &g, r);
+        // Solid where it will belong, dashed past the frame (its frame guide is placed on release).
+        painter.line_segment(line, Stroke::new(1.0, GUIDE));
+        for seg in beyond(line, r).into_iter().flatten() {
+            dashed(painter, seg, 1.0);
+        }
         label(app, painter, r, &g);
     }
 }
