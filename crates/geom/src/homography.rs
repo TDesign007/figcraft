@@ -28,6 +28,7 @@ impl Homography {
     }
 
     /// The matrix product `self · other` (apply `other` first).
+    #[allow(clippy::should_implement_trait)] // named for the product, not `*` (call sites stay readable)
     pub fn mul(self, o: Self) -> Self {
         let mut out = [0.0; 9];
         for r in 0..3 {

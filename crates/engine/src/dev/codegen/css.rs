@@ -163,7 +163,7 @@ pub(crate) fn css_decls(doc: &Document, n: &Node, t: &mut Tokens, hug: (bool, bo
     }
     let mut origin = "top left".to_string();
     if let Some(figcraft_doc::EffectKind::Transform3d(t3)) =
-        n.effects.iter().filter(|e| e.visible).find_map(|e| Some(&e.kind))
+        n.effects.iter().filter(|e| e.visible).map(|e| &e.kind).find(|k| matches!(k, figcraft_doc::EffectKind::Transform3d(_)))
     {
         let t3 = t3.sanitized();
         transform_parts.push(format!("rotateX({}deg)", num(t3.rotate_x)));

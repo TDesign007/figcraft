@@ -71,7 +71,7 @@ pub fn cube(doc: &Document, id: NodeId, size: (u32, u32)) -> Option<Pixmap> {
     };
     let front_h = page_to_preview(front);
     let back_h = page_to_preview(back);
-    let Some(mut out) = Pixmap::new(size.0, size.1) else { return None };
+    let mut out = Pixmap::new(size.0, size.1)?;
     // The back face first: the mirrored, darkened render.
     if let Some((mut face, at)) = warp(&content, bounds, rs, &back_h, size.0, size.1) {
         dim(&mut face, 0.35);
@@ -141,7 +141,7 @@ fn fill_quad(pix: &mut Pixmap, q: [(f64, f64); 4], rgb: (u8, u8, u8), shade: f64
     path.close();
     let Some(path) = path.finish() else { return };
     let (r, g, b) = rgb;
-    let scale = |v: u8| ((f64::from(v) * shade).round() as u8).min(255);
+    let scale = |v: u8| (f64::from(v) * shade).round() as u8;
     let paint = tiny_skia::Paint { shader: tiny_skia::Shader::SolidColor(css(scale(r), scale(g), scale(b))), anti_alias: true, ..Default::default() };
     pix.fill_path(&path, &paint, tiny_skia::FillRule::Winding, Transform::identity(), None);
 }

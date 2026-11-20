@@ -200,7 +200,7 @@ pub(crate) fn popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId, i: usiz
                     for (n, (lead, value, prop)) in turns.into_iter().enumerate() {
                         row(ui, 34.0, |ui| {
                             if n == 0 {
-                                label_at(ui, &t, tr("Rotation"), 0.0);
+                                label_at(ui, t, tr("Rotation"), 0.0);
                             }
                             ui.add_space(fields_x);
                             let field_w = ui.available_width();
@@ -215,7 +215,7 @@ pub(crate) fn popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId, i: usiz
                     }
                     ui.add_space(10.0);
                     row(ui, 34.0, |ui| {
-                        label_at(ui, &t, tr("Depth"), 0.0);
+                        label_at(ui, t, tr("Depth"), 0.0);
                         ui.add_space(fields_x);
                         let field_w = ui.available_width();
                         let ed = t3_field(app, ui, &ids, i, "depth", crate::widgets::Lead::Icon(Icon::DistributeV, ""), Some(t3.depth), "", field_w);
@@ -338,7 +338,7 @@ fn origin_panel(app: &mut FigApp, ui: &mut egui::Ui, ids: &[NodeId], i: usize, t
 
 /// The effect of row `i` on layer `id` (the popover's own edits read it fresh each frame).
 fn e_of_ids(app: &FigApp, ids: &[NodeId], i: usize) -> Effect {
-    app.session.doc().ok().and_then(|doc| doc.node(ids[0])).and_then(|n| n.effects.get(i).cloned()).unwrap_or_else(|| Effect::transform3d())
+    app.session.doc().ok().and_then(|doc| doc.node(ids[0])).and_then(|n| n.effects.get(i).cloned()).unwrap_or_else(Effect::transform3d)
 }
 
 /// `effect.set` for the popover's effect (one command, or a gesture's batched frames).
@@ -384,32 +384,42 @@ pub(crate) fn settings_popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId
     };
     let backface = matches!(&e.kind, EffectKind::Transform3d(t) if t.backface);
     let settings_w = 250.0;
-    // To the LEFT of the main popover, its top on the main one's top (the main one sits on the
-    // canvas side of the row, lifted to stay inside the window).
+    // To the LEFT of the main popover, top-aligned with it. Prefer the main popover's live rect so
+    // clamp/lift of the taller panel keeps both tops matching; fall back to the same placement
+    // math the main popover uses while its first (invisible) frame still has no size.
     let screen_h = ctx.content_rect().height();
     let panel_left = app.ui.right_panel_rect.map(|r| r.left()).unwrap_or(row_rect.left());
     let main_at = Pos2::new(
         (panel_left - WIDTH - 8.0).max(8.0),
         row_rect.top().max(8.0).min((screen_h - 430.0).max(8.0)),
     );
-    let at = Pos2::new((main_at.x - settings_w - 8.0).max(8.0), main_at.y.max(8.0));
+    let at = app
+        .ui
+        .t3_popover_pop
+        .as_ref()
+        .filter(|p| p.rect.is_positive())
+        .map(|p| Pos2::new((p.rect.left() - settings_w - 8.0).max(8.0), p.rect.top()))
+        .unwrap_or_else(|| Pos2::new((main_at.x - settings_w - 8.0).max(8.0), main_at.y.max(8.0)));
     let mut pop = app
         .ui
         .t3_settings_pop
         .take()
         .unwrap_or_else(|| Popover::with_id(Id::unique("t3_settings"), tr("Settings")).width(settings_w).pad(10.0).no_header());
     pop = pop.at(at).close_on_outside(true);
-    let hold: Vec<Rect> = app.ui.t3_settings_btn_rect.into_iter().collect();
+    let mut hold: Vec<Rect> = app.ui.t3_settings_btn_rect.into_iter().collect();
+    hold.extend(app.ui.t3_popover_pop.as_ref().map(|p| p.rect));
+    let mut close_rect = Rect::NOTHING;
     let closed = pop.show(ctx, crate::popover::Open::At(at), crate::popover::Hold { rects: &hold, escape: false }, |ui| {
         ui.set_width(settings_w - 20.0);
         // The header: the title at the top left and the close at the top right (the reference's
         // settings window), then a hairline across the panel.
         let head = menu_row_rect(ui, 40.0, |ui| {
-            let title = ui.painter().layout_no_wrap(tr("Settings").to_string(), semibold(13.0), t.menu_text);
+            let title = ui.painter().layout_no_wrap(tr("Settings").to_string(), semibold(12.0), t.text);
             let at = pos2(ui.cursor().min.x + 2.0, ui.cursor().center().y - title.size().y / 2.0);
-            ui.painter().galley(at, title, t.menu_text);
+            ui.painter().galley(at, title, t.text);
         });
         let x_rect = Rect::from_min_size(pos2(head.max.x - 8.0 - 24.0, head.center().y - 12.0), vec2(24.0, 24.0));
+        close_rect = x_rect;
         let x_resp = ui.interact(x_rect, Id::unique("t3_settings_close"), Sense::click());
         crate::a11y::describe(&x_resp, tr("Close"));
         if x_resp.hovered() {
@@ -423,10 +433,10 @@ pub(crate) fn settings_popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId
         ui.painter().rect_filled(line, CornerRadius::ZERO, t.border);
         ui.add_space(8.0);
         row(ui, 40.0, |ui| {
-            // The label.
-            let label = ui.painter().layout_no_wrap(tr("Backface").to_string(), regular(12.0), t.menu_text);
+            // The label — secondary panel text so it reads on the light/dark panel fill.
+            let label = ui.painter().layout_no_wrap(tr("Backface").to_string(), regular(12.0), t.text_secondary);
             let cy = ui.cursor().center().y - label.size().y / 2.0;
-            ui.painter().galley(pos2(ui.cursor().min.x + 2.0, cy), label, t.menu_text);
+            ui.painter().galley(pos2(ui.cursor().min.x + 2.0, cy), label, t.text_secondary);
             ui.add_space(56.0);
             // Figma's two-segment switch: "—" (the back hidden) and "✓" (shown), the picked
             // segment filled and outlined.
@@ -435,6 +445,7 @@ pub(crate) fn settings_popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId
             let (box_rect, _) = ui.allocate_exact_size(vec2(seg_w * 2.0, seg_h), Sense::click());
             // The switch's well, then the picked half as an outlined rounded rect (the reference).
             ui.painter().rect_filled(box_rect, CornerRadius::same(8), t.field);
+            ui.painter().rect_stroke(box_rect, CornerRadius::same(8), Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
             let halves = [
                 (Rect::from_min_size(box_rect.min, vec2(seg_w, seg_h)), false, false),
                 (Rect::from_min_size(pos2(box_rect.min.x + seg_w, box_rect.min.y), vec2(seg_w, seg_h)), true, true),
@@ -443,12 +454,12 @@ pub(crate) fn settings_popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId
                 let active = backface == shows;
                 let resp = ui.interact(half, Id::unique(("t3_backface", shows)), Sense::click());
                 if active {
-                    ui.painter().rect_filled(half.shrink(2.0), CornerRadius::same(6), t.menu);
+                    ui.painter().rect_filled(half.shrink(2.0), CornerRadius::same(6), t.panel);
                     ui.painter().rect_stroke(half.shrink(2.0), CornerRadius::same(6), Stroke::new(1.0, t.field_hover_border), egui::StrokeKind::Inside);
                 } else if resp.hovered() {
                     ui.painter().rect_filled(half.shrink(2.0), CornerRadius::same(6), t.hover);
                 }
-                let col = if active { t.menu_text } else { t.icon_secondary };
+                let col = if active { t.text } else { t.icon_secondary };
                 if shows {
                     icons::paint(ui.painter(), Rect::from_center_size(half.center(), Vec2::splat(16.0)), Icon::Check, col);
                 } else {
@@ -467,6 +478,7 @@ pub(crate) fn settings_popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId
         ui.add_space(4.0);
         app.ui.t3_settings_rect = Some(ui.min_rect().expand(12.0));
     });
+    pop.close = close_rect;
     app.ui.t3_settings_pop = Some(pop);
     if closed {
         app.ui.t3_settings_open = false;

@@ -82,7 +82,7 @@ pub(crate) fn draw_warped(ctx: &Ctx, pix: &mut Pixmap, n: &Node, xf: Affine, dep
     if !t3.backface && signed_area(&quad) < 0.0 {
         return;
     }
-    let op = n.opacity.clamp(0.0, 1.0) as f32;
+    let op = n.opacity.clamp(0.0, 1.0);
     // Drop shadows turn with the plane: cast in plane space, warped under the layer.
     let caster = shadow::Caster::new(ctx.doc, n, &plane, lxf, ctx.scale);
     for e in n.effects.iter().filter(|e| e.visible) {
@@ -119,7 +119,7 @@ pub(crate) fn warp(src: &Pixmap, r: Rect, rs: f64, h: &Homography, dw: u32, dh: 
     }
     let lw = w.min(16_384.0) as u32;
     let lh = hh.min(16_384.0) as u32;
-    let Some(mut out) = Pixmap::new(lw, lh) else { return None };
+    let mut out = Pixmap::new(lw, lh)?;
     let (sw, sh) = (i64::from(src.width()), i64::from(src.height()));
     let sp = src.pixels();
     let out_pixels = out.pixels_mut();

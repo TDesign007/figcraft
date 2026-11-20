@@ -103,17 +103,64 @@ fn the_reset_button_is_drawn_at_the_preview_corner() {
     assert!(panel.width() >= 250.0 - 1.0, "the panel is the popover's width: {:?}", panel.width());
 }
 
-#[test]
-fn the_settings_popover_shows_the_backface_toggle() {
-    let (mut u, r) = rect_with_effect(&json!({"type": "transform3d", "rotateX": 10.0}));
-    u.app.ui.t3_popover = Some((r, 0, row_rect()));
-    u.frame(vec![]);
-    u.app.ui.t3_settings_open = true;
-    u.frame(vec![]);
-    u.frame(vec![]);
+/// Open the main effect popup from its row, then click its settings button.
+fn open_settings(u: &mut Ui) -> Pos2 {
     let shapes = flat(&u.frame_output(vec![]).shapes);
-    assert!(has_text(&shapes, "Settings"), "the settings popover's title");
-    assert!(has_text(&shapes, "Backface"), "the backface row");
+    let dropdown = crate::live_tests::text_center(&shapes, "3D transform");
+    u.button(dropdown, true);
+    u.button(dropdown, false);
+    u.frame(vec![]);
+    let more = u.app.ui.t3_settings_btn_rect.unwrap().center();
+    assert!(!u.app.ui.t3_settings_open);
+    u.button(more, true);
+    u.button(more, false);
+    u.frame(vec![]);
+    assert!(u.app.ui.t3_settings_open, "clicking More opens Settings");
+    more
+}
+
+#[test]
+fn the_more_button_opens_a_readable_backface_popover() {
+    for theme in ["light", "dark"] {
+        let (mut u, _) = rect_with_effect(&json!({"type": "transform3d", "rotateX": 10.0}));
+        u.app.session.prefs.theme = theme.into();
+        let more = open_settings(&mut u);
+        // Past the Area fade-in so title/Backface colours are the settled token colours, not the
+        // mid-fade gamma-multiplied ones (same settle the menu contrast tests use).
+        for _ in 0..30 {
+            u.frame(vec![egui::Event::PointerMoved(Pos2::new(20.0, 20.0))]);
+        }
+        let shapes = flat(&u.frame_output(vec![]).shapes);
+        let main = u.app.ui.t3_popover_pop.as_ref().unwrap().rect;
+        let settings = u.app.ui.t3_settings_pop.as_ref().unwrap();
+        let panel = settings.rect;
+        let close = settings.close.center();
+        assert!(panel.right() <= main.left(), "Settings sits to the left of the effect popup");
+        assert!((panel.top() - main.top()).abs() < 1.0, "the popups align at the top");
+        let text = |value: &str| {
+            shapes
+                .iter()
+                .find_map(|shape| match shape {
+                    Shape::Text(t) if t.galley.text() == value && panel.contains(t.pos) => Some(t),
+                    _ => None,
+                })
+                .unwrap_or_else(|| panic!("{value} is visible in Settings"))
+        };
+        let title = text("Settings");
+        let label = text("Backface");
+        let tokens = crate::theme::Tokens::get(&u.ctx);
+        assert_eq!(title.fallback_color, tokens.text, "title uses readable panel text in {theme} mode");
+        assert_eq!(label.fallback_color, tokens.text_secondary, "Backface uses readable panel text in {theme} mode");
+        assert!((title.pos.x - label.pos.x).abs() < 1.0 && title.pos.y < label.pos.y, "title and setting align on the left");
+        u.button(close, true);
+        u.button(close, false);
+        assert!(u.app.ui.t3_popover.is_some(), "closing Settings leaves the main popup open");
+        assert!(!u.app.ui.t3_settings_open);
+        u.button(more, true);
+        u.button(more, false);
+        u.frame(vec![]);
+        assert!(u.app.ui.t3_settings_open, "More reopens Settings");
+    }
 }
 
 #[test]

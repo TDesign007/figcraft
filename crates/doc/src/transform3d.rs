@@ -204,7 +204,8 @@ pub fn perspective_of_node(doc: &Document, n: &Node) -> Option<f64> {
     while let Some(pid) = parent {
         let p = doc.node(pid)?;
         if p.kind.is_frame_like()
-            && let Some(crate::EffectKind::Perspective(persp)) = p.effects.iter().filter(|e| e.visible).find_map(|e| Some(&e.kind))
+            && let Some(crate::EffectKind::Perspective(persp)) =
+                p.effects.iter().filter(|e| e.visible).map(|e| &e.kind).find(|k| matches!(k, crate::EffectKind::Perspective(_)))
         {
             return Some(persp.sanitized().distance);
         }
@@ -218,9 +219,7 @@ pub fn perspective_of_node(doc: &Document, n: &Node) -> Option<f64> {
 /// transform.
 pub fn projected_quad(doc: &Document, id: crate::NodeId) -> Option<[Point; 4]> {
     let n = doc.node(id)?;
-    if of(n).is_none() {
-        return None;
-    }
+    of(n)?;
     let h = node_homography(doc, id)?;
     Some(h.quad(Rect::new(0.0, 0.0, n.width, n.height)))
 }

@@ -181,7 +181,7 @@ pub(crate) fn input(app: &mut FigApp, ctx: &egui::Context, pos: Pos2) -> bool {
         return false;
     }
     let Ok(doc) = app.session.doc() else { return false };
-    let Some(id) = app.session.selection().iter().copied().find(|id| figcraft_doc::transform3d::projector(&doc, *id).is_some()) else { return false };
+    let Some(id) = app.session.selection().iter().copied().find(|id| figcraft_doc::transform3d::projector(doc, *id).is_some()) else { return false };
     let pivot = screen_pivot(app, id);
     // The pivot dot first.
     if pivot.distance(pos) < 10.0 {
@@ -192,7 +192,7 @@ pub(crate) fn input(app: &mut FigApp, ctx: &egui::Context, pos: Pos2) -> bool {
     // The nearest ring's axis, by the distance to its sampled points.
     let mut best: Option<(usize, f32)> = None;
     for axis in 0..3 {
-        if let Some((pts, _)) = ring_samples(app, &doc, id, axis) {
+        if let Some((pts, _)) = ring_samples(app, doc, id, axis) {
             for (p, _) in &pts {
                 let d = p.distance(pos);
                 if d < GRAB_RADIUS && best.is_none_or(|(_, bd)| d < bd) {
@@ -214,7 +214,7 @@ pub(crate) fn input(app: &mut FigApp, ctx: &egui::Context, pos: Pos2) -> bool {
         return true;
     }
     // Inside the ball: free rotation.
-    if let Some(r) = ball_radius(app, &doc, id)
+    if let Some(r) = ball_radius(app, doc, id)
         && pivot.distance(pos) < r
     {
         app.session.begin_interaction("3D gizmo").ok();
@@ -233,7 +233,7 @@ pub(crate) fn input(app: &mut FigApp, ctx: &egui::Context, pos: Pos2) -> bool {
 
 fn screen_pivot(app: &FigApp, id: NodeId) -> Pos2 {
     if let Ok(doc) = app.session.doc()
-        && let Some(p) = figcraft_doc::transform3d::projector(&doc, id)
+        && let Some(p) = figcraft_doc::transform3d::projector(doc, id)
     {
         let (px, py) = p.pivot_page();
         return app.to_screen(px, py);
