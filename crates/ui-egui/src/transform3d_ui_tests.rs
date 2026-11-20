@@ -73,15 +73,10 @@ fn the_popover_opens_beside_the_row_with_the_preview_and_the_fields() {
     // The popover's first frame lays it out invisibly (its placement needs the size): the next
     // one draws it for real.
     u.frame(vec![]);
-    // The preview's own rect, as the popover actually placed it.
-    let preview = u.ctx.read_response(egui::Id::unique("t3_preview")).map(|r| r.rect).unwrap_or_else(|| panic!("the popover's preview is drawn"));
+    // The preview's own rect, as the popover actually placed it (the drawn pass, kept in state).
+    let preview = u.app.ui.t3_preview_rect.unwrap_or_else(|| panic!("the popover's preview is drawn"));
     // Drag across the preview: down, move, up in frames.
     let centre = preview.center();
-    if let Some(resp) = u.ctx.read_response(egui::Id::unique("t3_preview")) {
-        eprintln!("preview rect: {:?}", resp.rect);
-    } else {
-        eprintln!("preview: no response yet");
-    }
     let press = |p: Pos2, pressed: bool| egui::Event::PointerButton { pos: p, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
     u.frame(vec![egui::Event::PointerMoved(centre), press(centre, true)]);
     u.frame(vec![egui::Event::PointerMoved(centre + egui::vec2(15.0, 10.0))]);
@@ -105,7 +100,7 @@ fn the_reset_button_is_drawn_at_the_preview_corner() {
     let panel = u.ctx.memory(|m| m.area_rect(egui::Id::unique("t3_popover"))).unwrap();
     assert!(panel.contains(reset.center()), "the reset stays inside the popover panel: {reset:?} vs {panel:?}");
     // The whole field column stays inside the panel too (the layout no longer overflows right).
-    assert!(panel.width() >= 254.0 - 1.0, "the panel is the popover's width: {:?}", panel.width());
+    assert!(panel.width() >= 250.0 - 1.0, "the panel is the popover's width: {:?}", panel.width());
 }
 
 #[test]

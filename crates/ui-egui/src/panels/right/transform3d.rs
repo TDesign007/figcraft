@@ -8,6 +8,7 @@ use figcraft_doc::{Effect, EffectKind, NodeId, Transform3d};
 use serde_json::json;
 
 use super::menu::row;
+use super::semibold;
 use super::{FigApp, Tokens};
 use crate::popover::Popover;
 use crate::i18n::tr;
@@ -16,9 +17,9 @@ use crate::theme::regular;
 use crate::widgets::FieldEdit;
 
 /// The popover's width (points), as measured on the target app's.
-const WIDTH: f32 = 254.0;
+const WIDTH: f32 = 250.0;
 /// The preview panel's height.
-const PREVIEW_H: f32 = 145.0;
+const PREVIEW_H: f32 = 180.0;
 /// Drag-to-turn: degrees of turn per point of drag.
 const TURN_PER_PT: f64 = 0.55;
 
@@ -75,7 +76,7 @@ pub(crate) fn popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId, i: usiz
     // Fully on the canvas, to the left of the right panel (never over the panel or the row);
     // lifted to stay inside the window when the row is near its bottom.
     let panel_left = app.ui.right_panel_rect.map(|r| r.left()).unwrap_or(row_rect.left());
-    let tall = 380.0 + if app.ui.t3_origin_open { 140.0 } else { 0.0 };
+    let tall = 430.0 + if app.ui.t3_origin_open { 140.0 } else { 0.0 };
     let at = Pos2::new(
         (panel_left - WIDTH - 8.0).max(8.0),
         row_rect.top().max(8.0).min((screen_h - tall).max(8.0)),
@@ -85,33 +86,49 @@ pub(crate) fn popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId, i: usiz
         .ui
         .t3_popover_pop
         .take()
-        .unwrap_or_else(|| Popover::with_id(Id::unique("t3_popover"), tr("3D transform")).width(WIDTH).pad(10.0));
+        .unwrap_or_else(|| Popover::with_id(Id::unique("t3_popover"), tr("3D transform")).width(WIDTH).pad(10.0).no_header());
     // The anchor follows the row and the panel every frame (the chrome persists between frames).
     pop = pop.at(at).close_on_outside(true);
     let mut hold: Vec<egui::Rect> = vec![held];
     hold.extend(app.ui.t3_settings_rect);
     let closed = pop.show(ctx, crate::popover::Open::At(at), crate::popover::Hold { rects: &hold, escape: false }, |ui| {
                     ui.set_width(WIDTH - 20.0);
-                    // The header: the effect's mark, the layer's name, the pivot picker (⊕), the
-                    // close (the Popover's own header carries the title and the X).
-                    row(ui, 30.0, |ui| {
+                    // One header row, as the target app's: the effect's mark and title, the
+                    // layer's name as a badge, then the pivot picker, the settings and the close.
+                    row(ui, 34.0, |ui| {
                         cube_icon(ui, t);
+                        ui.add_space(6.0);
+                        let title = ui.painter().layout_no_wrap(tr("3D transform").to_string(), semibold(12.0), t.menu_text);
+                        let title_rect = Rect::from_min_size(ui.cursor().min, title.mesh_bounds.size());
+                        ui.painter().galley(title_rect.min, title, t.menu_text);
+                        ui.advance_cursor_after_rect(title_rect);
                         ui.add_space(6.0);
                         name_pill(ui, t, &name);
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if icons::button(ui, Icon::Close, 24.0, false, tr("Close")).clicked() {
+                            if icons::button(ui, Icon::Close, 26.0, false, tr("Close")).clicked() {
                                 app.ui.t3_popover = None;
                             }
-                            // The settings popover: the backface toggle.
-                            if icons::button(ui, Icon::Adjust, 24.0, app.ui.t3_settings_open, tr("Settings")).clicked() {
+                            if icons::button(ui, Icon::Adjust, 26.0, app.ui.t3_settings_open, tr("Settings")).clicked() {
                                 app.ui.t3_settings_open = !app.ui.t3_settings_open;
                             }
-                            // The pivot picker: nine preset points, the fields for a precise one.
-                            if icons::button(ui, Icon::Effects, 24.0, app.ui.t3_origin_open, tr("Rotation point")).clicked() {
+                            let (r, resp) = ui.allocate_exact_size(vec2(26.0, 26.0), Sense::click());
+                            let active = app.ui.t3_origin_open;
+                            let bg = if active {
+                                t.selected_row
+                            } else if resp.hovered() {
+                                t.hover
+                            } else {
+                                Color32::TRANSPARENT
+                            };
+                            ui.painter().rect_filled(r, CornerRadius::same(5), bg);
+                            crosshair(ui.painter(), r.center(), if active { t.accent_text } else { t.icon });
+                            let resp = crate::a11y::Tip::tip(resp, tr("Rotation point"));
+                            if resp.clicked() {
                                 app.ui.t3_origin_open = !app.ui.t3_origin_open;
                             }
                         });
                     });
+                    ui.add_space(4.0);
                     // The pivot picker's panel: the nine points on the layer, the precise X/Y.
                     if app.ui.t3_origin_open {
                         origin_panel(app, ui, &ids, i, t, &t3);
@@ -120,11 +137,12 @@ pub(crate) fn popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId, i: usiz
                     ui.add_space(2.0);
                     // The preview: the turned slab, dragged to turn it in real time, with a reset.
                     let (_, prect) = ui.allocate_space(vec2(WIDTH - 20.0, PREVIEW_H));
+                    app.ui.t3_preview_rect = Some(prect);
                     // The drag covers the preview except the reset's corner: a click-only widget
                     // inside a drag widget's rect never sees the press.
                     let drag_rect = Rect::from_min_max(prect.min, pos2(prect.max.x - 30.0, prect.max.y - 30.0));
                     let resp = ui.interact(drag_rect, Id::unique("t3_preview"), Sense::click_and_drag());
-                    ui.painter().rect_filled(prect, CornerRadius::same(8), t.panel);
+                    ui.painter().rect_filled(prect, CornerRadius::same(10), t.panel);
                     let painter = ui.painter().with_clip_rect(prect.intersect(ui.clip_rect()));
                     preview(app, &painter, prect, id, pw(), ph());
                     let reset_rect = Rect::from_min_size(prect.right_bottom() - vec2(30.0, 30.0), vec2(24.0, 24.0));
@@ -157,13 +175,15 @@ pub(crate) fn popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId, i: usiz
                     if resp.drag_stopped() {
                         app.session.commit_interaction().ok();
                     }
-                    ui.add_space(6.0);
-                    // The turns: one label for the three rows, the fields in their column.
-                    let fields_x = 72.0;
+                    ui.add_space(8.0);
+                    // The turns: one "Rotation" label for the group, the fields in one column.
+                    let fields_x = 80.0;
                     let turns = [("X", t3.rotate_x, "rotateX"), ("Y", t3.rotate_y, "rotateY"), ("Z", t3.rotate_z, "rotateZ")];
-                    for (lead, value, prop) in turns {
-                        row(ui, 30.0, |ui| {
-                            label_at(ui, &t, lead, 0.0);
+                    for (n, (lead, value, prop)) in turns.into_iter().enumerate() {
+                        row(ui, 34.0, |ui| {
+                            if n == 0 {
+                                label_at(ui, &t, tr("Rotation"), 0.0);
+                            }
                             ui.add_space(fields_x);
                             let field_w = ui.available_width();
                             let ed = t3_field(app, ui, &ids, i, prop, crate::widgets::Lead::Text(lead), Some(value), "°", field_w);
@@ -175,8 +195,9 @@ pub(crate) fn popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId, i: usiz
                             }
                         });
                     }
-                    row(ui, 30.0, |ui| {
-                        label_at(ui, &t, &tr("Depth"), 0.0);
+                    ui.add_space(10.0);
+                    row(ui, 34.0, |ui| {
+                        label_at(ui, &t, tr("Depth"), 0.0);
                         ui.add_space(fields_x);
                         let field_w = ui.available_width();
                         let ed = t3_field(app, ui, &ids, i, "depth", crate::widgets::Lead::Icon(Icon::DistributeV, ""), Some(t3.depth), "", field_w);
@@ -350,8 +371,8 @@ pub(crate) fn settings_popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId
     let screen_h = ctx.content_rect().height();
     let panel_left = app.ui.right_panel_rect.map(|r| r.left()).unwrap_or(row_rect.left());
     let main_at = Pos2::new(
-        (panel_left - 254.0 - 8.0).max(8.0),
-        row_rect.top().max(8.0).min((screen_h - 380.0).max(8.0)),
+        (panel_left - WIDTH - 8.0).max(8.0),
+        row_rect.top().max(8.0).min((screen_h - 430.0).max(8.0)),
     );
     let at = Pos2::new((main_at.x - settings_w - 8.0).max(8.0), main_at.y.max(8.0));
     let mut pop = app
@@ -434,8 +455,17 @@ fn name_pill(ui: &mut egui::Ui, t: &Tokens, name: &str) {
     let galley = ui.painter().layout_no_wrap(name.to_string(), regular(11.0), t.menu_text);
     let w = galley.size().x.min(72.0);
     let (r, _) = ui.allocate_exact_size(vec2(w + 12.0, 20.0), Sense::hover());
-    ui.painter().rect_filled(r, CornerRadius::same(6), t.panel);
+    ui.painter().rect_stroke(r, CornerRadius::same(5), Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
     ui.painter().galley(pos2(r.min.x + 6.0, r.center().y - galley.size().y / 2.0), galley, t.menu_text);
+}
+
+/// The rotation-point mark: a crosshair circle with four ticks (the reference's ⊕).
+fn crosshair(painter: &egui::Painter, c: Pos2, col: Color32) {
+    let r = 6.0;
+    painter.circle_stroke(c, r, Stroke::new(1.2, col));
+    for (dx, dy) in [(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)] {
+        painter.line_segment([pos2(c.x + dx * r, c.y + dy * r), pos2(c.x + dx * (r + 3.0), c.y + dy * (r + 3.0))], Stroke::new(1.2, col));
+    }
 }
 
 /// The turned slab into `prect`, through the render crate's preview composer, uploaded as a

@@ -83,6 +83,9 @@ pub struct Popover {
     pub title: String,
     width: f32,
     pad: f32,
+    /// Whether the built-in header (title and X) draws: a caller drawing its own single header
+    /// row turns it off.
+    header_shown: bool,
     surface: Surface,
     /// Whether a press outside it closes it.
     outside: bool,
@@ -112,6 +115,7 @@ impl Popover {
             title: title.into(),
             width: WIDTH,
             pad: SLOT_PAD,
+            header_shown: true,
             surface: Surface::Panel,
             outside: true,
             place: Place::Auto,
@@ -128,6 +132,13 @@ impl Popover {
     pub fn width(mut self, width: f32) -> Self {
         self.width = width.max(1.0);
         self.size.x = self.width;
+        self
+    }
+
+    /// No built-in header: the caller's body draws the whole top row (a popover whose header is
+    /// its own toolbar, as the 3D transform's is).
+    pub fn no_header(mut self) -> Self {
+        self.header_shown = false;
         self
     }
 
@@ -187,30 +198,35 @@ impl Popover {
             let bg = ui.painter().add(egui::Shape::Noop);
             let spacing = ui.spacing().item_spacing;
             ui.spacing_mut().item_spacing = Vec2::ZERO;
-            // 1. The header: the title, then the X at the right.
-            let (header, _) = ui.allocate_exact_size(vec2(self.width, HEADER_H), Sense::hover());
-            let close_rect = Rect::from_min_size(pos2(header.max.x - CLOSE_RIGHT - CLOSE, header.center().y - CLOSE / 2.0), Vec2::splat(CLOSE));
-            let handle = Rect::from_min_max(header.min, pos2(close_rect.min.x - 6.0, header.max.y));
-            let drag = ui.interact(handle, self.id.with("drag"), Sense::drag());
-            let font = semibold(11.0);
-            let title = widgets::elide_font(ui, &self.title, (handle.width() - TITLE_LEFT - 8.0).max(0.0), font.clone());
-            ui.painter().text(pos2(header.min.x + TITLE_LEFT, header.center().y), Align2::LEFT_CENTER, title, font, header_text(t, dark));
-            close = close_button(ui, self.id.with("close"), close_rect, dark, t);
-            // 2. The header drags the panel (grabbed where the press landed, so the first frame of
-            // a fast drag counts too); the X keeps its own clicks.
-            if drag.hovered() && ctx.input(|i| i.pointer.primary_pressed()) {
-                self.grab = ctx.input(|i| i.pointer.interact_pos()).map(|at| at - pos);
-            }
-            if drag.dragged()
-                && let (Some(grab), Some(at)) = (self.grab, drag.interact_pointer_pos())
-            {
-                self.place = Place::At(clamp(at - grab, self.size, screen));
-            }
-            if ctx.input(|i| i.pointer.any_released()) {
-                self.grab = None;
-            }
-            if drag.dragged() || drag.hovered() {
-                ui.ctx().set_cursor_icon(if drag.dragged() { egui::CursorIcon::Grabbing } else { egui::CursorIcon::Grab });
+            // 1–2. The header (the title and the X at the right) or none, with the caller's own.
+            let mut header = Rect::NOTHING;
+            let mut close_rect = Rect::NOTHING;
+            if self.header_shown {
+                let (h, _) = ui.allocate_exact_size(vec2(self.width, HEADER_H), Sense::hover());
+                header = h;
+                close_rect = Rect::from_min_size(pos2(header.max.x - CLOSE_RIGHT - CLOSE, header.center().y - CLOSE / 2.0), Vec2::splat(CLOSE));
+                let handle = Rect::from_min_max(header.min, pos2(close_rect.min.x - 6.0, header.max.y));
+                let drag = ui.interact(handle, self.id.with("drag"), Sense::drag());
+                let font = semibold(11.0);
+                let title = widgets::elide_font(ui, &self.title, (handle.width() - TITLE_LEFT - 8.0).max(0.0), font.clone());
+                ui.painter().text(pos2(header.min.x + TITLE_LEFT, header.center().y), Align2::LEFT_CENTER, title, font, header_text(t, dark));
+                close = close_button(ui, self.id.with("close"), close_rect, dark, t);
+                // The header drags the panel (grabbed where the press landed, so the first frame
+                // of a fast drag counts too); the X keeps its own clicks.
+                if drag.hovered() && ctx.input(|i| i.pointer.primary_pressed()) {
+                    self.grab = ctx.input(|i| i.pointer.interact_pos()).map(|at| at - pos);
+                }
+                if drag.dragged()
+                    && let (Some(grab), Some(at)) = (self.grab, drag.interact_pointer_pos())
+                {
+                    self.place = Place::At(clamp(at - grab, self.size, screen));
+                }
+                if ctx.input(|i| i.pointer.any_released()) {
+                    self.grab = None;
+                }
+                if drag.dragged() || drag.hovered() {
+                    ui.ctx().set_cursor_icon(if drag.dragged() { egui::CursorIcon::Grabbing } else { egui::CursorIcon::Grab });
+                }
             }
             // 3. The slot, under a hairline.
             let frame = egui::Frame::NONE.inner_margin(egui::Margin::same(self.pad as i8)).show(ui, |ui| {
@@ -220,20 +236,27 @@ impl Popover {
                 ui.min_rect()
             });
             let slot = frame.inner;
-            let panel = Rect::from_min_size(header.min, vec2(self.width, frame.response.rect.max.y - header.min.y));
+            let panel = if self.header_shown {
+                Rect::from_min_size(header.min, vec2(self.width, frame.response.rect.max.y - header.min.y))
+            } else {
+                frame.response.rect
+            };
             let shadow = ctx.global_style().visuals.popup_shadow;
             let fill = if dark { t.menu } else { t.panel };
-            let shapes = vec![
+            let mut shapes = vec![
                 egui::Shape::from(shadow.as_shape(panel, RADIUS)),
                 RectShape::filled(panel, CornerRadius::same(RADIUS), fill).into(),
-                // A point of the theme's border colour under the header.
-                RectShape::filled(
-                    Rect::from_min_max(pos2(panel.min.x, header.max.y - 1.0), pos2(panel.max.x, header.max.y)),
-                    CornerRadius::ZERO,
-                    if dark { Color32::from_white_alpha(24) } else { t.border },
-                )
-                .into(),
             ];
+            if self.header_shown {
+                shapes.push(
+                    RectShape::filled(
+                        Rect::from_min_max(pos2(panel.min.x, header.max.y - 1.0), pos2(panel.max.x, header.max.y)),
+                        CornerRadius::ZERO,
+                        if dark { Color32::from_white_alpha(24) } else { t.border },
+                    )
+                    .into(),
+                );
+            }
             ui.painter().set(bg, egui::Shape::Vec(shapes));
             if self.rect != panel {
                 ctx.request_repaint();
