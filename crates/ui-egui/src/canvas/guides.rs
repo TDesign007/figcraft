@@ -5,7 +5,7 @@
 //! it's rotated). Guides show while the rulers do; layers snap to them. Alt while dragging measures
 //! from the guide to the layers in the frame it crosses.
 
-use egui::{Color32, CornerRadius, Id, Pos2, Rect, Stroke, pos2, vec2};
+use egui::{Color32, CornerRadius, Id, Pos2, Rect, Shape, Stroke, pos2, vec2};
 use figcraft_doc::{Document, NodeId};
 use figcraft_engine::guides;
 use figcraft_geom::Point;
@@ -310,8 +310,24 @@ pub fn end_released(ctx: &egui::Context) {
     });
 }
 
+/// The dragged guide's preview line: across the whole canvas along its axis. A frame guide's own
+/// line spans only its frame, so as a preview it would show nothing outside the frame — the
+/// target app keeps the dashed line running past the frame's edges while the guide is dragged.
+fn preview_line(app: &FigApp, g: &Placed, r: Rect) -> Vec<Pos2> {
+    let [a, b] = segment(app, g, r);
+    let d = b - a;
+    if d.x.abs() <= 0.5 {
+        vec![pos2(a.x, r.min.y), pos2(a.x, r.max.y)]
+    } else if d.y.abs() <= 0.5 {
+        vec![pos2(r.min.x, a.y), pos2(r.max.x, a.y)]
+    } else {
+        vec![a, b]
+    }
+}
+
 /// Draw the page's and its frames' guides (under the rulers) and the one being dragged with its
-/// position.
+/// position. Hovered guides are dashed (the target app's hover state); the guide being dragged is
+/// a dashed preview across the canvas, gone on release.
 pub fn draw(app: &FigApp, painter: &egui::Painter) {
     if !rulers_on(app) {
         return;
@@ -329,14 +345,17 @@ pub fn draw(app: &FigApp, painter: &egui::Painter) {
         if Some((g.owner, g.index)) == moving {
             continue;
         }
-        let hovered = hover == Some(g) || selected == Some((g.owner, g.index));
-        painter.line_segment(segment(app, &g, r), Stroke::new(if hovered { 2.0 } else { 1.0 }, GUIDE));
-        if hovered {
+        let line = segment(app, &g, r);
+        let hovered = hover == Some(g);
+        if hovered || selected == Some((g.owner, g.index)) {
+            painter.extend(Shape::dashed_line(&line, Stroke::new(if hovered { 2.0 } else { 1.5 }, GUIDE), 4.0, 3.0));
             label(app, painter, r, &g);
+        } else {
+            painter.line_segment(line, Stroke::new(1.0, GUIDE));
         }
     }
     if let Some(g) = ctx.data(|d| d.get_temp::<Placed>(preview_id())) {
-        painter.line_segment(segment(app, &g, r), Stroke::new(1.0, GUIDE));
+        painter.extend(Shape::dashed_line(&preview_line(app, &g, r), Stroke::new(1.0, GUIDE), 4.0, 3.0));
         label(app, painter, r, &g);
     }
 }
