@@ -179,3 +179,25 @@ fn the_backface_segments_toggle_the_setting() {
     let figcraft_doc::EffectKind::Transform3d(t) = &n.effects[0].kind else { panic!("no turn") };
     assert!(t.backface, "the ✓ segment shows the back");
 }
+
+#[test]
+fn dragging_the_pivot_dot_moves_the_origin() {
+    let (mut u, r) = rect_with_effect(&json!({"type": "transform3d", "rotateX": 20.0, "rotateY": 30.0}));
+    u.frame(vec![]);
+    // The pivot's screen point, as the gizmo draws it.
+    let doc = u.app.session.doc().unwrap().clone();
+    let p = figcraft_doc::transform3d::projector(&doc, r).unwrap();
+    let (px, py) = p.pivot_page();
+    let pivot = u.app.to_screen(px, py);
+    let press = |p: Pos2, pressed: bool| egui::Event::PointerButton { pos: p, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE };
+    // Grab the dot, drag it toward the layer's bottom-right, release.
+    u.frame(vec![egui::Event::PointerMoved(pivot), press(pivot, true)]);
+    u.frame(vec![egui::Event::PointerMoved(pivot + egui::vec2(20.0, 15.0))]);
+    u.frame(vec![egui::Event::PointerMoved(pivot + egui::vec2(40.0, 30.0))]);
+    u.frame(vec![egui::Event::PointerMoved(pivot + egui::vec2(40.0, 30.0)), press(pivot + egui::vec2(40.0, 30.0), false)]);
+    u.frame(vec![]);
+    let n = u.app.session.doc().unwrap().node(r).unwrap().clone();
+    let figcraft_doc::EffectKind::Transform3d(t) = &n.effects[0].kind else { panic!("no turn") };
+    assert!(t.origin.0 > 55.0 && t.origin.1 > 55.0, "the origin moved toward the drag: {:?}", t.origin);
+    assert_eq!((t.rotate_x, t.rotate_y), (20.0, 30.0), "the turns stay: the drag moved the pivot, not the turn");
+}

@@ -84,6 +84,14 @@ pub(crate) fn input(app: &mut FigApp, ctx: &egui::Context, pos: Pos2) -> bool {
             return true;
         }
         let pivot = screen_pivot(app, id);
+        if axis == 3 {
+            // The pivot's drag: the origin moves to the pointer's place on the layer, in the
+            // layer's own percent.
+            if let Some(pos) = hover {
+                apply_origin_at(app, id, pos);
+            }
+            return true;
+        }
         if let (Some(_), Some(d)) = (hover, hover.map(|p| wrap_deg(angle(p, pivot) - start_angle))) {
             let cmd = match axis { 0 => "rotateX", 1 => "rotateY", _ => "rotateZ" };
             apply_turn(app, id, cmd, (start_value + d).clamp(-360.0, 360.0));
@@ -109,6 +117,12 @@ pub(crate) fn input(app: &mut FigApp, ctx: &egui::Context, pos: Pos2) -> bool {
                 }
             }
         }
+    }
+    // The pivot dot first: a press on it grabs the origin (dragged to a new place on the layer).
+    if pivot.distance(pos) < 10.0 {
+        app.session.begin_interaction("3D gizmo").ok();
+        app.canvas.t3_gizmo = Some((id, 3, 0.0, 0.0));
+        return true;
     }
     let Some((axis, _)) = best else { return false };
     app.session.begin_interaction("3D gizmo").ok();
@@ -155,6 +169,35 @@ fn current_turn(app: &FigApp, id: NodeId, axis: usize) -> f64 {
         })
         .map(|t| match axis { 0 => t.rotate_x, 1 => t.rotate_y, _ => t.rotate_z })
         .unwrap_or(0.0)
+}
+
+/// The origin moves to the pointer's place on the layer: the pointer through the layer's own
+/// placement into its coordinates, as the pivot's percent (one batched gesture).
+fn apply_origin_at(app: &mut FigApp, id: NodeId, pos: Pos2) {
+    let Some(mut e) = app
+        .session
+        .doc()
+        .ok()
+        .and_then(|doc| doc.node(id).cloned())
+        .and_then(|n| {
+            n.effects.iter().filter(|e| e.visible).find_map(|e| match &e.kind {
+                figcraft_doc::EffectKind::Transform3d(_) => Some(e.clone()),
+                _ => None,
+            })
+        })
+    else {
+        return;
+    };
+    let Some((w, h)) = app.session.doc().ok().and_then(|doc| doc.node(id)).map(|n| (n.width, n.height)) else { return };
+    let page = app.to_page(pos);
+    let Some(local) = app.session.doc().ok().map(|doc| doc.world_transform(id).inverse() * figcraft_geom::Point::new(page.x, page.y)) else { return };
+    if let figcraft_doc::EffectKind::Transform3d(t) = &mut e.kind {
+        t.origin = (
+            (local.x / w.max(1e-6) * 100.0).clamp(0.0, 100.0),
+            (local.y / h.max(1e-6) * 100.0).clamp(0.0, 100.0),
+        );
+    }
+    app.session.execute("effect.set", &serde_json::json!({"ids": [id.0], "index": 0, "effect": e})).ok();
 }
 
 /// One turn's new value, through `effect.set` (the gesture batches it).

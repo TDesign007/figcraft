@@ -179,6 +179,22 @@ pub fn projector(doc: &Document, id: crate::NodeId) -> Option<Projector> {
     Some(Projector { world: doc.world_transform(id), pivot: t3.pivot(n.width, n.height), depth: t3.depth, d: perspective_of(doc, id), cx, sx, cy, sy, cz, sz })
 }
 
+/// The nearest ancestor frame's Perspective distance for `n`'s subtree (its own effect doesn't
+/// count), for code that holds the node but not its id.
+pub fn perspective_of_node(doc: &Document, n: &Node) -> Option<f64> {
+    let mut parent = n.parent;
+    while let Some(pid) = parent {
+        let p = doc.node(pid)?;
+        if p.kind.is_frame_like()
+            && let Some(crate::EffectKind::Perspective(persp)) = p.effects.iter().filter(|e| e.visible).find_map(|e| Some(&e.kind))
+        {
+            return Some(persp.sanitized().distance);
+        }
+        parent = p.parent;
+    }
+    None
+}
+
 /// The layer's projected corners in page coordinates (its local box through the homography),
 /// for the selection outline and the warped render's extent. `None` without a visible 3D
 /// transform.
@@ -240,6 +256,15 @@ mod tests {
         let top = q[0].distance(q[1]);
         let bottom = q[3].distance(q[2]);
         assert!((top - bottom).abs() > 1.0, "the far edge differs from the near one: {top} vs {bottom}");
+    }
+
+    /// A pivot at a corner keeps that corner exactly where it was: the turn happens about it.
+    #[test]
+    fn pivot_at_a_corner_stays_put() {
+        let t3 = Transform3d { rotate_x: 40.0, origin: (0.0, 0.0), ..Transform3d::default() };
+        let h = plane_homography(&t3, (0.0, 0.0), Some(800.0));
+        let (x, y) = h.apply(0.0, 0.0);
+        assert!((x - 0.0).abs() < 1e-9 && (y - 0.0).abs() < 1e-9, "the origin corner stays: ({x}, {y})");
     }
 
     /// A point maps back to itself through the turn and its inverse.

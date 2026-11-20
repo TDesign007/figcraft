@@ -154,11 +154,32 @@ pub(crate) fn css_decls(doc: &Document, n: &Node, t: &mut Tokens, hug: (bool, bo
         put("mix-blend-mode", n.blend.css().into());
     }
     // Rotation turns counter-clockwise about the top-left corner (the position given); CSS
-    // rotate turns clockwise.
+    // rotate turns clockwise. A 3D transform shares the `transform` property (its functions
+    // after the 2D rotate) and owns the origin: the pivot percent instead of the top-left corner.
     let rot = figcraft_geom::rotation_degrees(n.transform);
+    let mut transform_parts: Vec<String> = Vec::new();
     if rot.abs() > 0.01 && rot.is_finite() {
-        put("transform", format!("rotate({}deg)", num(-rot)));
-        put("transform-origin", "top left".into());
+        transform_parts.push(format!("rotate({}deg)", num(-rot)));
+    }
+    let mut origin = "top left".to_string();
+    if let Some(figcraft_doc::EffectKind::Transform3d(t3)) =
+        n.effects.iter().filter(|e| e.visible).find_map(|e| Some(&e.kind))
+    {
+        let t3 = t3.sanitized();
+        transform_parts.push(format!("rotateX({}deg)", num(t3.rotate_x)));
+        transform_parts.push(format!("rotateY({}deg)", num(t3.rotate_y)));
+        transform_parts.push(format!("rotateZ({}deg)", num(t3.rotate_z)));
+        if t3.depth != 0.0 {
+            transform_parts.push(format!("translateZ({}px)", num(t3.depth)));
+        }
+        origin = format!("{}% {}%", num(t3.origin.0), num(t3.origin.1));
+        if !t3.backface {
+            put("backface-visibility", "hidden".into());
+        }
+    }
+    if !transform_parts.is_empty() {
+        put("transform", transform_parts.join(" "));
+        put("transform-origin", origin);
     }
     if matches!(n.kind, NodeKind::Text(_)) {
         // Text: a solid is the ink (`color`), one per fill, so the last (top) one wins.
@@ -285,6 +306,9 @@ fn effect_decls(n: &Node, put: &mut impl FnMut(&str, String)) {
     }
     for e in n.effects.iter().filter(|e| e.visible) {
         match e.kind {
+            // The frame's camera for its descendants' 3D transforms (CSS perspective is a
+            // property of the parent).
+            EffectKind::Perspective(ref p) => put("perspective", format!("{}px", num(p.sanitized().distance))),
             // CSS blurs are uniform: a progressive blur has no CSS equivalent and is left out.
             EffectKind::LayerBlur(ref b) if !b.is_progressive() => put("filter", format!("blur({}px)", num(b.radius / 2.0))),
             EffectKind::BackgroundBlur(ref b) if !b.is_progressive() => put("backdrop-filter", format!("blur({}px)", num(b.radius / 2.0))),

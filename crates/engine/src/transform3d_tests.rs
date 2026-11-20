@@ -29,7 +29,7 @@ fn the_new_effects_add_and_set() {
     let n = s.doc().unwrap().node(figcraft_doc::NodeId(r)).unwrap().clone();
     assert!(matches!(&n.effects[0].kind, EffectKind::Transform3d(t) if t.rotate_x == 30.0 && t.rotate_y == 20.0 && t.depth == 40.0 && !t.backface));
     // A field the effect doesn't take is refused, naming what it takes.
-    let err = s.execute("effect.set", &json!({"ids": [r], "index": 0, "effect": {"type": "transform3d", "rotateZ": 10.0}})).unwrap_err();
+    let err = s.execute("effect.set", &json!({"ids": [r], "index": 0, "effect": {"type": "transform3d", "rotateW": 10.0}})).unwrap_err();
     assert!(err.to_string().contains("rotateX"), "the error names the fields: {err}");
 }
 
@@ -57,7 +57,7 @@ fn the_projection_follows_the_turn() {
     let doc = s.doc().unwrap();
     let q = figcraft_doc::transform3d::projected_quad(&doc, id).unwrap();
     assert_eq!(q[0], Point::new(40.0, 40.0), "no turn: the box as placed");
-    drop(doc);
+    let _ = &doc;
     s.execute(
         "effect.set",
         &json!({"ids": [r], "index": 0, "effect": {"type": "transform3d", "rotateX": 90.0}}),
@@ -68,7 +68,7 @@ fn the_projection_follows_the_turn() {
     for c in &q {
         assert!((c.y - 90.0).abs() < 1e-9, "every corner on the pivot line: {c:?}");
     }
-    drop(doc);
+    let _ = &doc;
     // A point maps back through the turn to the same place.
     s.execute(
         "effect.set",
@@ -104,4 +104,38 @@ fn a_turned_layer_hits_where_its_plane_paints() {
     assert_eq!(hit, Some(figcraft_doc::NodeId(r)), "inside the turned plane's span");
     let hit = doc.hit_test(page, Point::new(90.0, 135.0), 0.0, result);
     assert_eq!(hit, None, "inside the old box, off the turned plane");
+}
+
+/// The Dev Mode CSS for a turned layer: the CSS functions in Figma's own order (the turns, the
+/// depth as translateZ), the pivot as the transform-origin, and the hidden back's visibility.
+#[test]
+fn the_css_shows_the_3d_transform() {
+    let mut s = Session::new();
+    let r = doc_rect(&mut s);
+    s.execute("effect.add", &json!({"ids": [r], "type": "transform3d"})).unwrap();
+    s.execute(
+        "effect.set",
+        &json!({"ids": [r], "index": 0, "effect": {"type": "transform3d", "rotateX": -29.0, "rotateY": -45.0, "depth": 80.0, "backface": false}}),
+    )
+    .unwrap();
+    let doc = s.doc().unwrap();
+    let n = doc.node(figcraft_doc::NodeId(r)).unwrap();
+    let css = crate::dev::codegen::css_decls(&doc, n, &mut crate::dev::codegen::Tokens::default(), (false, false));
+    assert!(css.contains("transform: rotateX(-29deg) rotateY(-45deg) rotateZ(0deg) translateZ(80px);"), "the CSS functions in order: {css}");
+    assert!(css.contains("transform-origin: 50% 50%;"), "the pivot is the origin: {css}");
+    assert!(css.contains("backface-visibility: hidden;"), "the hidden back: {css}");
+}
+
+/// A frame's Perspective effect is the CSS perspective property (the camera belongs to the
+/// parent), and a turned layer's pivot percent shows in the origin.
+#[test]
+fn the_perspective_is_the_frame_s_css_property() {
+    let mut s = Session::new();
+    let f = s.execute("node.create", &json!({"type": "frame", "x": 0.0, "y": 0.0, "width": 400.0, "height": 400.0})).unwrap()["id"].as_u64().unwrap();
+    s.execute("effect.add", &json!({"ids": [f], "type": "perspective"})).unwrap();
+    s.execute("effect.set", &json!({"ids": [f], "index": 0, "effect": {"type": "perspective", "distance": 600.0}})).unwrap();
+    let doc = s.doc().unwrap();
+    let n = doc.node(figcraft_doc::NodeId(f)).unwrap();
+    let css = crate::dev::codegen::css_decls(&doc, n, &mut crate::dev::codegen::Tokens::default(), (false, false));
+    assert!(css.contains("perspective: 600px;"), "the camera on the frame: {css}");
 }
