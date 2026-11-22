@@ -572,12 +572,9 @@ fn pop_row(ui: &mut Ui, h: f32, add: impl FnOnce(&mut Ui)) {
 /// reference's column.
 const LABEL_W: f32 = 64.0;
 
-/// The label zone in a row of two labelled fields (count and type, width and margin).
-const PAIR_LABEL_W: f32 = 40.0;
-
-/// Layout grid `i`'s settings: size (grids); count, type, width or height, margin and gutter
-/// (columns and rows); colour — the label at the left, its field at the right (the reference's
-/// popover rows). The numbers can be bound to number variables
+/// Layout grid `i`'s settings: size and colour (grids); count, colour, type, width or height,
+/// margin or offset and gutter (columns and rows) — one row each, the label at the left, its
+/// field at the right (the reference's popover). The numbers can be bound to number variables
 /// (`layoutGrids/<i>/<size|count|gutter|offset>`).
 fn grid_settings(app: &mut FigApp, ui: &mut Ui, ids: &[NodeId], list: &[LayoutGrid], i: usize, g: &LayoutGrid) {
     let t = Tokens::get(ui.ctx());
@@ -593,6 +590,31 @@ fn grid_settings(app: &mut FigApp, ui: &mut Ui, ids: &[NodeId], list: &[LayoutGr
         let e = crate::variable_ui::number_field(app, ui, ids, &key, Id::unique(("grid_field", name, i)), Lead::None, Some(value), "", width);
         app.field_run(e, "node.set", |v| set(&|x| apply(x, v)));
     };
+    // The colour: the reference's one well — the swatch, the hex, a divider and the alpha.
+    let color_row = |app: &mut FigApp, ui: &mut Ui| {
+        pop_row(ui, 32.0, |ui| {
+            label(ui, tr("Color"), LABEL_W);
+            let w = ui.available_width();
+            let at = ui.cursor().min;
+            ui.painter().rect_filled(Rect::from_min_size(at, vec2(w, widgets::FIELD_H)), CornerRadius::same(5), t.field);
+            ui.add_space(6.0);
+            let (sw, _) = ui.allocate_exact_size(vec2(16.0, 16.0), Sense::hover());
+            widgets::paint_swatch(ui.painter(), sw, &Paint::solid(g.color));
+            ui.add_space(6.0);
+            let hex_w = w - 28.0 - 8.0 - 56.0 - 8.0;
+            if let Some(h) = widgets::text_field(ui, Id::unique(("grid_hex", i)), &g.color.to_hex(), hex_w, "")
+                && let Some(c) = figcraft_color::Color::from_hex_or_name(&h)
+            {
+                app.run("node.set", set(&|x| x.color = c.with_alpha(x.color.a)));
+            }
+            // The divider between the hex and the alpha.
+            let div_x = ui.cursor().min.x + 3.5;
+            ui.painter()
+                .rect_filled(Rect::from_min_max(pos2(div_x, at.y + 4.0), pos2(div_x + 1.0, at.y + widgets::FIELD_H - 4.0)), CornerRadius::ZERO, t.border);
+            let e = widgets::number_field(ui, Id::unique(("grid_alpha", i)), Lead::None, Some((f64::from(g.color.a) * 100.0).round()), "%", 56.0, 1.0);
+            app.field_run(e, "node.set", |v| set(&|x| x.color = x.color.with_alpha((v / 100.0).clamp(0.0, 1.0) as f32)));
+        });
+    };
     let size = |x: &mut LayoutGrid, v: f64| x.size = v.max(1.0);
     let offset = |x: &mut LayoutGrid, v: f64| x.offset = v.max(0.0);
     let gutter = |x: &mut LayoutGrid, v: f64| x.gutter = v.max(0.0);
@@ -601,26 +623,34 @@ fn grid_settings(app: &mut FigApp, ui: &mut Ui, ids: &[NodeId], list: &[LayoutGr
             label(ui, tr("Size"), LABEL_W);
             field(app, ui, "size", g.size, ui.available_width(), &size);
         });
+        color_row(app, ui);
     } else {
         let cols = g.kind == GridKind::Columns;
-        // The two-field rows: each field takes half of what the two labels leave.
-        let pair = (ui.available_width() - 2.0 * (PAIR_LABEL_W + 8.0) - 8.0) / 2.0;
+        // The count: the reference's combo — the number typed in, or its caret's menu (a common
+        // count, one of the file's number variables, or Auto where a stretched grid can't take
+        // it).
         pop_row(ui, 32.0, |ui| {
-            label(ui, tr("Count"), PAIR_LABEL_W);
+            label(ui, tr("Count|grid"), LABEL_W);
+            let w = ui.available_width();
+            let at = ui.cursor().min;
+            let key = format!("layoutGrids/{i}/count");
             // 0 is Auto for fixed-size columns (rows); a stretched grid has at least one.
             let count = (!auto_count(g)).then(|| f64::from(g.count.max(1)));
-            let key = format!("layoutGrids/{i}/count");
-            let id = Id::unique(("grid_field", "count", i));
-            // A stretched grid has at least one band, so 0 (Auto) isn't a count it can take.
             let e = if g.align == GridAlign::Stretch {
-                crate::variable_ui::number_field_or(app, ui, ids, &key, id, count, pair, "", Lead::None, "")
+                crate::variable_ui::number_field_or(app, ui, ids, &key, Id::unique(("grid_field", "count", i)), count, w, "", Lead::None, "")
             } else {
-                crate::variable_ui::number_field_auto(app, ui, ids, &key, id, count, pair, Lead::None, "")
+                crate::variable_ui::number_field_auto(app, ui, ids, &key, Id::unique(("grid_field", "count", i)), count, w, Lead::None, "")
             };
             app.field_run(e, "node.set", |v| {
                 set(&|x| x.count = if x.align == GridAlign::Stretch { v.round().clamp(1.0, 1000.0) } else { v.round().clamp(0.0, 1000.0) } as u32)
             });
-            label(ui, tr("Type"), PAIR_LABEL_W);
+            count_menu(app, ui, ids, list, i, g, &key, Rect::from_min_size(at, vec2(w, widgets::FIELD_H)));
+        });
+        color_row(app, ui);
+        // The type: stretch, or a fixed side — which decides the rows below (the reference's:
+        // stretch shows the auto width and the margin, a fixed side its own width and offset).
+        pop_row(ui, 32.0, |ui| {
+            label(ui, tr("Type"), LABEL_W);
             let names =
                 if cols { [tr("Stretch"), tr("Left"), tr("Center"), tr("Right")] } else { [tr("Stretch"), tr("Top"), tr("Center"), tr("Bottom")] };
             let aligns = [GridAlign::Stretch, GridAlign::Min, GridAlign::Center, GridAlign::Max];
@@ -650,56 +680,99 @@ fn grid_settings(app: &mut FigApp, ui: &mut Ui, ids: &[NodeId], list: &[LayoutGr
         let span = if cols { tr("Width") } else { tr("Height") };
         match g.align {
             GridAlign::Stretch => {
+                // The frame, divided by the count: shown as Auto and not editable.
                 pop_row(ui, 32.0, |ui| {
-                    label(ui, &span, PAIR_LABEL_W);
-                    // The frame, divided by the count: shown as Auto and not editable.
+                    label(ui, &span, LABEL_W);
                     ui.add_enabled_ui(false, |ui| {
                         let auto = widgets::Empty::Text(tr("Auto"));
-                        widgets::number_field_bindable(ui, Id::unique(("grid_field", "size", i)), Lead::None, None, "", pair, 1.0, None, auto);
+                        widgets::number_field_bindable(ui, Id::unique(("grid_field", "size", i)), Lead::None, None, "", ui.available_width(), 1.0, None, auto);
                     });
-                    label(ui, tr("Margin"), PAIR_LABEL_W);
-                    field(app, ui, "offset", g.offset, pair, &offset);
                 });
                 pop_row(ui, 32.0, |ui| {
-                    label(ui, tr("Gutter"), LABEL_W);
-                    field(app, ui, "gutter", g.gutter, ui.available_width(), &gutter);
+                    label(ui, tr("Margin"), LABEL_W);
+                    field(app, ui, "offset", g.offset, ui.available_width(), &offset);
                 });
             }
             GridAlign::Center => {
                 pop_row(ui, 32.0, |ui| {
-                    label(ui, &span, PAIR_LABEL_W);
-                    field(app, ui, "size", g.size, pair, &size);
-                    label(ui, tr("Gutter"), PAIR_LABEL_W);
-                    field(app, ui, "gutter", g.gutter, pair, &gutter);
+                    label(ui, &span, LABEL_W);
+                    field(app, ui, "size", g.size, ui.available_width(), &size);
                 });
             }
             GridAlign::Min | GridAlign::Max => {
                 pop_row(ui, 32.0, |ui| {
-                    label(ui, &span, PAIR_LABEL_W);
-                    field(app, ui, "size", g.size, pair, &size);
-                    label(ui, tr("Margin"), PAIR_LABEL_W);
-                    field(app, ui, "offset", g.offset, pair, &offset);
+                    label(ui, &span, LABEL_W);
+                    field(app, ui, "size", g.size, ui.available_width(), &size);
                 });
                 pop_row(ui, 32.0, |ui| {
-                    label(ui, tr("Gutter"), LABEL_W);
-                    field(app, ui, "gutter", g.gutter, ui.available_width(), &gutter);
+                    label(ui, tr("Offset"), LABEL_W);
+                    field(app, ui, "offset", g.offset, ui.available_width(), &offset);
                 });
             }
         }
+        pop_row(ui, 32.0, |ui| {
+            label(ui, tr("Gutter"), LABEL_W);
+            field(app, ui, "gutter", g.gutter, ui.available_width(), &gutter);
+        });
     }
-    // The colour: swatch, hex and alpha, in the field column.
-    pop_row(ui, 32.0, |ui| {
-        label(ui, tr("Color"), LABEL_W);
-        let (sw, _) = ui.allocate_exact_size(vec2(16.0, 16.0), Sense::hover());
-        widgets::paint_swatch(ui.painter(), sw, &Paint::solid(g.color));
-        let hex_w = ui.available_width() - 56.0 - 8.0;
-        if let Some(h) = widgets::text_field(ui, Id::unique(("grid_hex", i)), &g.color.to_hex(), hex_w, "")
-            && let Some(c) = figcraft_color::Color::from_hex_or_name(&h)
-        {
-            app.run("node.set", set(&|x| x.color = c.with_alpha(x.color.a)));
+}
+
+/// The count field's caret menu (the reference's combo): one of the common counts, one of the
+/// file's number variables, or Auto where a stretched grid can't take it. The caret sits over
+/// the field's right end (`field`).
+fn count_menu(app: &mut FigApp, ui: &mut Ui, ids: &[NodeId], list: &[LayoutGrid], i: usize, g: &LayoutGrid, key: &str, field: Rect) {
+    let t = Tokens::get(ui.ctx());
+    let caret = Rect::from_min_max(pos2(field.max.x - 24.0, field.min.y), pos2(field.max.x, field.max.y));
+    let resp = ui.interact(caret, Id::unique(("grid_count_caret", i)), Sense::click());
+    icons::paint(ui.painter(), Rect::from_center_size(caret.center(), vec2(12.0, 12.0)), Icon::Chevron, t.icon_secondary);
+    menu_popup(&resp).show(|ui| {
+        let bound = app.session.doc().ok().and_then(|d| d.node(ids[0]).and_then(|n| n.bound.get(key).cloned()));
+        // Picking a count (or Auto) lets go of a bound variable first.
+        let release = |app: &mut FigApp| {
+            if bound.is_some() {
+                app.run("variable.bind", json!({"ids": ids, "field": key, "variable": null}));
+            }
+        };
+        for n in 1..=12u32 {
+            let on = bound.is_none() && !auto_count(g) && g.count == n;
+            if menu_check(ui, on, &n.to_string(), "") {
+                release(app);
+                app.set_props(ids, json!({"grids": grids_with(list, i, |x| x.count = n)}));
+                ui.close();
+            }
         }
-        let e = widgets::number_field(ui, Id::unique(("grid_alpha", i)), Lead::None, Some((f64::from(g.color.a) * 100.0).round()), "%", 56.0, 1.0);
-        app.field_run(e, "node.set", |v| set(&|x| x.color = x.color.with_alpha((v / 100.0).clamp(0.0, 1.0) as f32)));
+        // The file's number variables, when it has any (the reference's menu applies one here;
+        // a library's are reached through the field's own variable button).
+        let vars: Vec<(figcraft_doc::VariableId, String)> = app
+            .session
+            .doc()
+            .ok()
+            .map(|d| {
+                d.variables
+                    .variables
+                    .iter()
+                    .filter(|v| v.kind == VariableType::Number && !figcraft_engine::library::is_remote_variable(d, &v.id))
+                    .map(|v| (v.id.clone(), v.name.clone()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        if !vars.is_empty() {
+            ui.separator();
+            for (vid, name) in vars {
+                if menu_check(ui, bound.as_ref() == Some(&vid), &name, "") {
+                    app.run("variable.bind", json!({"ids": ids, "field": key, "variable": vid}));
+                    ui.close();
+                }
+            }
+        }
+        if g.align != GridAlign::Stretch {
+            ui.separator();
+            if menu_check(ui, auto_count(g) && bound.is_none(), tr("Auto"), "") {
+                release(app);
+                app.set_props(ids, json!({"grids": grids_with(list, i, |x| x.count = 0)}));
+                ui.close();
+            }
+        }
     });
 }
 

@@ -1168,6 +1168,33 @@ fn button(u: &mut Ui, label: &str) -> Pos2 {
     Pos2::new(((b.x0 + b.x1) / 2.0) as f32, ((b.y0 + b.y1) / 2.0) as f32)
 }
 
+/// The count field's caret menu: the common counts with the current one checked, and Auto for a
+/// fixed grid (the reference's combo).
+#[test]
+fn the_count_fields_caret_menu_offers_counts_and_auto() {
+    let mut s = Session::new();
+    let f = id(s.execute("frame.create", &json!({"x": 0.0, "y": 0.0, "width": 400.0, "height": 300.0})).unwrap());
+    s.execute("node.set", &json!({"ids": [f], "props": {"grids": [{"kind": "columns", "align": "min", "count": 3, "size": 8}]}})).unwrap();
+    s.execute("select.set", &json!({"ids": [f]})).unwrap();
+    let mut u = Ui::new(s);
+    u.frame(vec![]);
+    u.app.ui.grid_popover = Some((vec![f], 0, egui::Rect::from_min_max(pos2(700.0, 200.0), pos2(724.0, 232.0))));
+    for _ in 0..4 {
+        u.frame(vec![]);
+    }
+    // The caret sits over the count field's right end.
+    let field = u.ctx.read_response(Id::unique(("grid_field", "count", 0usize)).with("field")).expect("the count field").rect;
+    click(&mut u, Pos2::new(field.max.x - 12.0, field.center().y));
+    for _ in 0..30 {
+        u.frame(vec![]);
+    }
+    let texts: Vec<String> =
+        flat(&u.frame_output(vec![]).shapes).iter().filter_map(|sh| if let egui::Shape::Text(t) = sh { Some(t.galley.text().to_string()) } else { None }).collect();
+    assert!(texts.iter().any(|t| t.contains("✓ 3")), "the current count is checked: {texts:?}");
+    assert!(texts.iter().any(|t| t.contains("12")), "the presets go up to 12: {texts:?}");
+    assert!(texts.iter().any(|t| t.contains("Auto")), "Auto is offered for a fixed grid: {texts:?}");
+}
+
 /// The grid icon opens the grid's settings as a popover beside the row (Figma's interaction) and
 /// toggles it shut; nothing expands inline under the row any more.
 #[test]
