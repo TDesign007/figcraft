@@ -508,11 +508,26 @@ pub(super) fn grids(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[NodeId
             }
             let w = ui.available_width() - 60.0;
             let resp = widgets::dropdown(ui, &grid_label(g), w, None);
-            // The row's label opens the grid's popover too (the reference's list rows do); the
-            // 网格/列/行 switch lives in the popover's own dropdown now.
-            if resp.clicked() {
-                app.ui.grid_popover = if open { None } else { Some((ids.clone(), i, resp.rect)) };
-            }
+            // The row's dropdown switches the type: its options read each type's own defaults
+            // (the reference's "Grid 10px", "5 columns", "5 rows"). The popover's header
+            // dropdown — the current type's name — offers the same three.
+            menu_popup(&resp).show(|ui| {
+                for (l, kind) in [
+                    (grid_label(&LayoutGrid::default()), GridKind::Grid),
+                    (grid_label(&LayoutGrid::columns()), GridKind::Columns),
+                    (grid_label(&LayoutGrid::rows()), GridKind::Rows),
+                ] {
+                    if menu_check(ui, kind == g.kind, &l, "") {
+                        let fresh = match kind {
+                            GridKind::Grid => LayoutGrid::default(),
+                            GridKind::Columns => LayoutGrid::columns(),
+                            GridKind::Rows => LayoutGrid::rows(),
+                        };
+                        app.set_props(&ids, json!({"grids": grids_with(&list, i, |x| *x = fresh)}));
+                        ui.close();
+                    }
+                }
+            });
             let (toggle, remove) = widgets::tight_end(ui, |ui| {
                 (
                     icons::button(ui, if g.visible { Icon::Eye } else { Icon::EyeOff }, 24.0, false, tr("Toggle")).clicked(),

@@ -6,7 +6,7 @@
 
 use egui::accesskit::Role;
 use egui::{Event, Id, Key, Modifiers, Pos2, pos2};
-use figcraft_doc::NodeId;
+use figcraft_doc::{GridKind, NodeId};
 use figcraft_engine::Session;
 use serde_json::json;
 
@@ -1166,6 +1166,54 @@ fn button(u: &mut Ui, label: &str) -> Pos2 {
         .and_then(|(_, n)| n.bounds())
         .unwrap_or_else(|| panic!("no {label:?} button"));
     Pos2::new(((b.x0 + b.x1) / 2.0) as f32, ((b.y0 + b.y1) / 2.0) as f32)
+}
+
+/// The row's dropdown switches the type: its options read each type's own defaults (the
+/// reference's "Grid 10px", "5 columns", "5 rows") with the current one checked.
+#[test]
+fn the_row_dropdown_switches_the_type_with_the_types_defaults() {
+    let mut s = Session::new();
+    let f = id(s.execute("frame.create", &json!({"x": 0.0, "y": 0.0, "width": 400.0, "height": 300.0})).unwrap());
+    s.execute("grid.add", &json!({"ids": [f]})).unwrap();
+    s.execute("select.set", &json!({"ids": [f]})).unwrap();
+    let mut u = Ui::new(s);
+    u.ctx.enable_accesskit();
+    u.frame(vec![]);
+    // The row's dropdown goes by what it shows: a combo whose value is the grid's name.
+    let dd = {
+        let out = u.frame_output(vec![]);
+        let b = out
+            .platform_output
+            .accesskit_update
+            .expect("an AccessKit update")
+            .nodes
+            .into_iter()
+            .find(|(_, n)| n.role() == Role::ComboBox && n.value() == Some("Grid 10px"))
+            .and_then(|(_, n)| n.bounds())
+            .expect("the row's dropdown");
+        Pos2::new(((b.x0 + b.x1) / 2.0) as f32, ((b.y0 + b.y1) / 2.0) as f32)
+    };
+    click(&mut u, dd);
+    for _ in 0..30 {
+        u.frame(vec![]);
+    }
+    let shapes = flat(&u.frame_output(vec![]).shapes);
+    assert!(has_text(&shapes, "✓ Grid 10px"), "the current type is checked");
+    // Picking "5 columns" switches the grid to the columns' own defaults.
+    let pick = shapes
+        .iter()
+        .find_map(|sh| {
+            if let egui::Shape::Text(t) = sh {
+                t.galley.text().contains("5 columns").then(|| egui::Rect::from_min_size(t.pos, t.galley.size()))
+            } else {
+                None
+            }
+        })
+        .expect("the columns option");
+    click(&mut u, pick.center());
+    u.frame(vec![]);
+    let g = &u.app.session.doc().unwrap().node(f).unwrap().grids[0];
+    assert!(matches!(g.kind, GridKind::Columns) && g.count == 5, "switched to the columns' defaults");
 }
 
 /// The count field's caret menu: the common counts with the current one checked, and Auto for a
