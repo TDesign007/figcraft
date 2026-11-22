@@ -1,9 +1,10 @@
 name: Release clients
 
-# Builds the desktop clients with the repo's own packaging scripts and publishes them as a
-# GitHub Release: macOS universal DMG (+ CLI zip) and Windows x64 MSI (+ portable zip).
-# Unsigned (forks have no certificates): macOS is ad-hoc signed, Windows binaries are unsigned.
-# Trigger: a pushed `v*` tag, or a manual dispatch (tag input empty = `v<version from Cargo.toml>`).
+# Builds the macOS client with the repo's own packaging script and publishes it as a GitHub
+# Release: a universal (Apple Silicon + Intel) DMG and the CLI zip. Ad-hoc signed (forks have no
+# certificates). Windows packaging is intentionally not built for now (re-add the windows job
+# from git history when wanted). Trigger: a pushed `v*` tag, or a manual dispatch (tag input
+# empty = `v<version from Cargo.toml>`).
 
 on:
   push:
@@ -37,6 +38,9 @@ jobs:
           if-no-files-found: error
 
   windows:
+    # Disabled for now (only the Mac client ships). Restore this job — and the needs entry on
+    # publish — to also ship the Windows x64 MSI and portable zip (WiX v5 + extensions needed).
+    if: false
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -53,7 +57,7 @@ jobs:
           if-no-files-found: error
 
   publish:
-    needs: [macos, windows]
+    needs: [macos]
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
@@ -79,7 +83,7 @@ jobs:
           TAG="${{ steps.tag.outputs.tag }}"
           SHA="$(git rev-parse --short HEAD)"
           {
-            echo "# FigCraft $VERSION — Mac / Win 客户端"
+            echo "# FigCraft $VERSION — Mac 客户端"
             echo
             echo "修改版 fork 构建 ([TDesign007/figcraft](https://github.com/TDesign007/figcraft))，基于上游 [storytold/figcraft](https://github.com/storytold/figcraft)，提交 \`$SHA\`。"
             echo
@@ -89,13 +93,10 @@ jobs:
             echo "|---|---|---|"
             echo "| \`figcraft-$VERSION-macos-universal.dmg\` | macOS 11+（Apple Silicon 和 Intel） | 图形客户端，打开后拖入 Applications |"
             echo "| \`figcraft-cli-$VERSION-macos-universal.zip\` | macOS | 命令行工具 figcraft-cli |"
-            echo "| \`figcraft-$VERSION-windows-x64.msi\` | Windows 10/11 x64 | 安装版（含开始菜单快捷方式） |"
-            echo "| \`figcraft-$VERSION-windows-x64-portable.zip\` | Windows 10/11 x64 | 便携版，解压即用 |"
             echo
             echo "## 安装注意 / Installation notes"
             echo
             echo "- **macOS**: 无 Apple 开发者签名（ad-hoc）。首次打开若提示\"无法验证开发者\"，请**右键 FigCraft.app → 打开**；或终端执行 \`xattr -cr /Applications/FigCraft.app\`。"
-            echo "- **Windows**: 无 Authenticode 签名。SmartScreen 提示时选择**\"更多信息\" → \"仍要运行\"**。exe 已静态链接 C 运行时，无需 VC++ Redistributable。"
             echo
             echo "## 近期改动 (recent changes)"
             echo
@@ -103,5 +104,5 @@ jobs:
             git log --oneline -15
             echo "\`\`\`"
           } > notes.md
-          gh release create "$TAG" dist/figcraft-* --title "FigCraft $VERSION — Mac & Win 客户端" --notes-file notes.md \
+          gh release create "$TAG" dist/figcraft-* --title "FigCraft $VERSION — Mac 客户端" --notes-file notes.md \
             || gh release upload "$TAG" --clobber dist/figcraft-*
