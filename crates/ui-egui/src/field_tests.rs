@@ -11,6 +11,7 @@ use figcraft_engine::Session;
 use serde_json::json;
 
 use crate::a11y::focused_name;
+use crate::live_tests::{flat, has_text};
 use crate::field_math::{Rel, Typed, eval, parse, stepped};
 use crate::layers_drag_tests::Ui;
 use crate::widgets::{scrub_amount, scrubbed};
@@ -1190,8 +1191,26 @@ fn the_grid_icon_toggles_a_settings_popover_instead_of_expanding() {
     assert!(panel.contains(field.min) && panel.contains(field.max), "the settings live in the popover: {field:?} vs {panel:?}");
     let right = u.app.ui.right_panel_rect.expect("the panel is drawn");
     assert!(!right.intersects(field), "and not inline in the panel: {field:?} vs {:?}", right);
-    // The icon toggles it shut.
-    let icon = button(&mut u, "Layout grid settings");
+    // The header: the type dropdown at the left (the current type's name), whose options read
+    // each type's own defaults — the reference's "Grid 10px", "5 columns", "5 rows".
+    let shapes = flat(&u.frame_output(vec![]).shapes);
+    assert!(has_text(&shapes, "Grid"), "the type dropdown's label");
+    let dd = Pos2::new(panel.min.x + 16.0 + 36.0, panel.min.y + 16.0 + 22.0);
+    click(&mut u, dd);
+    for _ in 0..30 {
+        u.frame(vec![]);
+    }
+    // The options read each type's own defaults (the check mark and its alignment are part of
+    // the row's text, hence the substring reads).
+    let texts: Vec<String> =
+        flat(&u.frame_output(vec![]).shapes).iter().filter_map(|sh| if let egui::Shape::Text(t2) = sh { Some(t2.galley.text().to_string()) } else { None }).collect();
+    assert!(
+        texts.iter().any(|tx| tx.contains("Grid 10px")) && texts.iter().any(|tx| tx.contains("5 columns")) && texts.iter().any(|tx| tx.contains("5 rows")),
+        "the type options read the types' defaults: {texts:?}"
+    );
+    key(&mut u, Key::Escape, Modifiers::NONE);
+    u.frame(vec![]);
+    // The icon toggles it shut (it hasn't moved since it opened the popover).
     click(&mut u, icon);
     assert!(u.app.ui.grid_popover.is_none(), "the icon toggled it shut");
 }

@@ -1,7 +1,8 @@
 use super::menu::{add_menu_popup, context_popup, menu_check, menu_item, menu_item_enabled, menu_popup, row, row_context_menu, row_rect, row_target};
+use super::transform3d::label_at;
 use super::{
-    Blur, BlurType, Document, Effect, EffectKind, FieldEdit, FigApp, Glass, GridAlign, GridKind, Icon, Id, LayoutGrid, Lead, ListDrag,
-    MAX_BLUR_RADIUS, NodeId, Noise, NoiseMode, Paint, Perspective, Rect, Sense, Shadow, StyleSlot, Texture, Transform3d, Ui, VariableType,
+    Blur, BlurType, CornerRadius, Document, Effect, EffectKind, FieldEdit, FigApp, Glass, GridAlign, GridKind, Icon, Id, LayoutGrid, Lead, ListDrag,
+    MAX_BLUR_RADIUS, NodeId, Noise, NoiseMode, Paint, Perspective, Rect, Sense, Shadow, StyleSlot, Texture, Tokens, Transform3d, Ui, VariableType,
     common, icons, json, move_flags, moved_index, pos2, remove_flags, removed_index, style_picker, tr, trf, trn, vec2, widgets,
 };
 use crate::property_rows::PropertyKind;
@@ -507,19 +508,11 @@ pub(super) fn grids(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[NodeId
             }
             let w = ui.available_width() - 60.0;
             let resp = widgets::dropdown(ui, &grid_label(g), w, None);
-            menu_popup(&resp).width(220.0).show(|ui| {
-                for (l, kind) in [(tr("Grid"), GridKind::Grid), (tr("Columns"), GridKind::Columns), (tr("Rows"), GridKind::Rows)] {
-                    if menu_item(ui, l, "") {
-                        let fresh = match kind {
-                            GridKind::Grid => LayoutGrid::default(),
-                            GridKind::Columns => LayoutGrid::columns(),
-                            GridKind::Rows => LayoutGrid::rows(),
-                        };
-                        app.set_props(&ids, json!({"grids": grids_with(&list, i, |x| *x = fresh)}));
-                        ui.close();
-                    }
-                }
-            });
+            // The row's label opens the grid's popover too (the reference's list rows do); the
+            // 网格/列/行 switch lives in the popover's own dropdown now.
+            if resp.clicked() {
+                app.ui.grid_popover = if open { None } else { Some((ids.clone(), i, resp.rect)) };
+            }
             let (toggle, remove) = widgets::tight_end(ui, |ui| {
                 (
                     icons::button(ui, if g.visible { Icon::Eye } else { Icon::EyeOff }, 24.0, false, tr("Toggle")).clicked(),
@@ -540,10 +533,10 @@ pub(super) fn grids(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[NodeId
     }
 }
 
-/// A layout grid's name in its row ("Grid (10)", "5 columns").
+/// A layout grid's name in its row ("Grid 10px", "5 columns").
 fn grid_label(g: &LayoutGrid) -> String {
     match g.kind {
-        GridKind::Grid => trf("Grid ({size})", &[("size", &g.size)]),
+        GridKind::Grid => trf("Grid {size}px", &[("size", &g.size)]),
         GridKind::Columns if auto_count(g) => tr("Auto columns").to_string(),
         GridKind::Rows if auto_count(g) => tr("Auto rows").to_string(),
         GridKind::Columns => trn("{n} columns", g.count.max(1) as usize, &[]),
@@ -565,46 +558,74 @@ fn grids_with(list: &[LayoutGrid], i: usize, f: impl FnOnce(&mut LayoutGrid)) ->
     gs
 }
 
-/// Layout grid `i`'s settings: size (grids); count, type, width or height, margin or offset and
-/// gutter (columns and rows); colour. The numbers can be bound to number variables
+/// A row in the grid popover: the slot's full width, without the panel's grid insets (the slot's
+/// own margin does), so the label and its field sit where the reference's do.
+fn pop_row(ui: &mut Ui, h: f32, add: impl FnOnce(&mut Ui)) {
+    let w = ui.available_width();
+    let (r, _) = ui.allocate_exact_size(vec2(w, h), Sense::hover());
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(r).layout(egui::Layout::left_to_right(egui::Align::Center)));
+    child.spacing_mut().item_spacing = vec2(8.0, 0.0);
+    add(&mut child);
+}
+
+/// The popover's label zone: the field starts this far in (plus the row's spacing), the
+/// reference's column.
+const LABEL_W: f32 = 64.0;
+
+/// The label zone in a row of two labelled fields (count and type, width and margin).
+const PAIR_LABEL_W: f32 = 40.0;
+
+/// Layout grid `i`'s settings: size (grids); count, type, width or height, margin and gutter
+/// (columns and rows); colour — the label at the left, its field at the right (the reference's
+/// popover rows). The numbers can be bound to number variables
 /// (`layoutGrids/<i>/<size|count|gutter|offset>`).
 fn grid_settings(app: &mut FigApp, ui: &mut Ui, ids: &[NodeId], list: &[LayoutGrid], i: usize, g: &LayoutGrid) {
-    let col = widgets::col_width(ui.available_width());
+    let t = Tokens::get(ui.ctx());
     let set = |f: &dyn Fn(&mut LayoutGrid)| json!({"ids": ids, "props": {"grids": grids_with(list, i, f)}});
-    // One bindable number field, applied with `apply` (a scrub is one undo step).
-    let field = |app: &mut FigApp, ui: &mut Ui, name: &str, value: f64, apply: &dyn Fn(&mut LayoutGrid, f64)| {
+    // The label, then its field `w` later (the spacing follows).
+    let label = |ui: &mut Ui, s: &str, w: f32| {
+        label_at(ui, &t, s, 0.0);
+        ui.add_space(w);
+    };
+    // One bindable number field of `width`, applied with `apply` (a scrub is one undo step).
+    let field = |app: &mut FigApp, ui: &mut Ui, name: &str, value: f64, width: f32, apply: &dyn Fn(&mut LayoutGrid, f64)| {
         let key = format!("layoutGrids/{i}/{name}");
-        let e = crate::variable_ui::number_field(app, ui, ids, &key, Id::unique(("grid_field", name, i)), Lead::None, Some(value), "", col);
+        let e = crate::variable_ui::number_field(app, ui, ids, &key, Id::unique(("grid_field", name, i)), Lead::None, Some(value), "", width);
         app.field_run(e, "node.set", |v| set(&|x| apply(x, v)));
     };
     let size = |x: &mut LayoutGrid, v: f64| x.size = v.max(1.0);
     let offset = |x: &mut LayoutGrid, v: f64| x.offset = v.max(0.0);
     let gutter = |x: &mut LayoutGrid, v: f64| x.gutter = v.max(0.0);
     if g.kind == GridKind::Grid {
-        widgets::sublabels(ui, tr("Size"), None);
-        row(ui, 32.0, |ui| field(app, ui, "size", g.size, &size));
+        pop_row(ui, 32.0, |ui| {
+            label(ui, tr("Size"), LABEL_W);
+            field(app, ui, "size", g.size, ui.available_width(), &size);
+        });
     } else {
         let cols = g.kind == GridKind::Columns;
-        widgets::sublabels(ui, tr("Count"), Some(tr("Type")));
-        row(ui, 32.0, |ui| {
+        // The two-field rows: each field takes half of what the two labels leave.
+        let pair = (ui.available_width() - 2.0 * (PAIR_LABEL_W + 8.0) - 8.0) / 2.0;
+        pop_row(ui, 32.0, |ui| {
+            label(ui, tr("Count"), PAIR_LABEL_W);
             // 0 is Auto for fixed-size columns (rows); a stretched grid has at least one.
             let count = (!auto_count(g)).then(|| f64::from(g.count.max(1)));
             let key = format!("layoutGrids/{i}/count");
             let id = Id::unique(("grid_field", "count", i));
             // A stretched grid has at least one band, so 0 (Auto) isn't a count it can take.
             let e = if g.align == GridAlign::Stretch {
-                crate::variable_ui::number_field_or(app, ui, ids, &key, id, count, col, "", Lead::None, "")
+                crate::variable_ui::number_field_or(app, ui, ids, &key, id, count, pair, "", Lead::None, "")
             } else {
-                crate::variable_ui::number_field_auto(app, ui, ids, &key, id, count, col, Lead::None, "")
+                crate::variable_ui::number_field_auto(app, ui, ids, &key, id, count, pair, Lead::None, "")
             };
             app.field_run(e, "node.set", |v| {
                 set(&|x| x.count = if x.align == GridAlign::Stretch { v.round().clamp(1.0, 1000.0) } else { v.round().clamp(0.0, 1000.0) } as u32)
             });
+            label(ui, tr("Type"), PAIR_LABEL_W);
             let names =
                 if cols { [tr("Stretch"), tr("Left"), tr("Center"), tr("Right")] } else { [tr("Stretch"), tr("Top"), tr("Center"), tr("Bottom")] };
             let aligns = [GridAlign::Stretch, GridAlign::Min, GridAlign::Center, GridAlign::Max];
             let cur = aligns.iter().position(|a| *a == g.align).unwrap_or(0);
-            let resp = widgets::dropdown(ui, names.get(cur).copied().unwrap_or_default(), col, None);
+            let resp = widgets::dropdown(ui, names.get(cur).copied().unwrap_or_default(), ui.available_width(), None);
             menu_popup(&resp).show(|ui| {
                 for (k, (name, a)) in names.iter().zip(aligns).enumerate() {
                     if menu_check(ui, k == cur, name, "") {
@@ -629,42 +650,50 @@ fn grid_settings(app: &mut FigApp, ui: &mut Ui, ids: &[NodeId], list: &[LayoutGr
         let span = if cols { tr("Width") } else { tr("Height") };
         match g.align {
             GridAlign::Stretch => {
-                widgets::sublabels(ui, span, Some(tr("Margin")));
-                row(ui, 32.0, |ui| {
+                pop_row(ui, 32.0, |ui| {
+                    label(ui, &span, PAIR_LABEL_W);
                     // The frame, divided by the count: shown as Auto and not editable.
                     ui.add_enabled_ui(false, |ui| {
                         let auto = widgets::Empty::Text(tr("Auto"));
-                        widgets::number_field_bindable(ui, Id::unique(("grid_field", "size", i)), Lead::Named(span), None, "", col, 1.0, None, auto)
+                        widgets::number_field_bindable(ui, Id::unique(("grid_field", "size", i)), Lead::None, None, "", pair, 1.0, None, auto);
                     });
-                    field(app, ui, "offset", g.offset, &offset);
+                    label(ui, tr("Margin"), PAIR_LABEL_W);
+                    field(app, ui, "offset", g.offset, pair, &offset);
                 });
-                widgets::sublabels(ui, tr("Gutter"), None);
-                row(ui, 32.0, |ui| field(app, ui, "gutter", g.gutter, &gutter));
+                pop_row(ui, 32.0, |ui| {
+                    label(ui, tr("Gutter"), LABEL_W);
+                    field(app, ui, "gutter", g.gutter, ui.available_width(), &gutter);
+                });
             }
             GridAlign::Center => {
-                widgets::sublabels(ui, span, Some(tr("Gutter")));
-                row(ui, 32.0, |ui| {
-                    field(app, ui, "size", g.size, &size);
-                    field(app, ui, "gutter", g.gutter, &gutter);
+                pop_row(ui, 32.0, |ui| {
+                    label(ui, &span, PAIR_LABEL_W);
+                    field(app, ui, "size", g.size, pair, &size);
+                    label(ui, tr("Gutter"), PAIR_LABEL_W);
+                    field(app, ui, "gutter", g.gutter, pair, &gutter);
                 });
             }
             GridAlign::Min | GridAlign::Max => {
-                widgets::sublabels(ui, span, Some(tr("Offset")));
-                row(ui, 32.0, |ui| {
-                    field(app, ui, "size", g.size, &size);
-                    field(app, ui, "offset", g.offset, &offset);
+                pop_row(ui, 32.0, |ui| {
+                    label(ui, &span, PAIR_LABEL_W);
+                    field(app, ui, "size", g.size, pair, &size);
+                    label(ui, tr("Margin"), PAIR_LABEL_W);
+                    field(app, ui, "offset", g.offset, pair, &offset);
                 });
-                widgets::sublabels(ui, tr("Gutter"), None);
-                row(ui, 32.0, |ui| field(app, ui, "gutter", g.gutter, &gutter));
+                pop_row(ui, 32.0, |ui| {
+                    label(ui, tr("Gutter"), LABEL_W);
+                    field(app, ui, "gutter", g.gutter, ui.available_width(), &gutter);
+                });
             }
         }
     }
-    // The colour: swatch, hex and alpha.
-    widgets::sublabels(ui, tr("Color"), None);
-    row(ui, 32.0, |ui| {
+    // The colour: swatch, hex and alpha, in the field column.
+    pop_row(ui, 32.0, |ui| {
+        label(ui, tr("Color"), LABEL_W);
         let (sw, _) = ui.allocate_exact_size(vec2(16.0, 16.0), Sense::hover());
         widgets::paint_swatch(ui.painter(), sw, &Paint::solid(g.color));
-        if let Some(h) = widgets::text_field(ui, Id::unique(("grid_hex", i)), &g.color.to_hex(), 80.0, "")
+        let hex_w = ui.available_width() - 56.0 - 8.0;
+        if let Some(h) = widgets::text_field(ui, Id::unique(("grid_hex", i)), &g.color.to_hex(), hex_w, "")
             && let Some(c) = figcraft_color::Color::from_hex_or_name(&h)
         {
             app.run("node.set", set(&|x| x.color = c.with_alpha(x.color.a)));
@@ -677,10 +706,11 @@ fn grid_settings(app: &mut FigApp, ui: &mut Ui, ids: &[NodeId], list: &[LayoutGr
 /// The settings popover's width (the Perspective popover's).
 const POPOVER_W: f32 = 250.0;
 
-/// The layout grid's settings popover (Figma's): the row's grid icon opens it beside the row, on
-/// the canvas side, and it edits the grid like the panel's own fields do. Its title is the grid's
-/// name, which moves with it when the type changes. Clears the state itself when what it edits is
-/// gone.
+/// The layout grid's settings popover (the reference's): the row's grid icon or label opens it
+/// beside the row, on the canvas side. Its header is the type dropdown at the left (网格 / 列 /
+/// 行, whose options read each type's own default — "Grid 10px", "5 columns", "5 rows") with the
+/// close at the right over a hairline; below, the fields edit the grid like the panel's own.
+/// Clears the state itself when what it edits is gone.
 pub(crate) fn grid_popover(app: &mut FigApp, ctx: &egui::Context, ids: &[NodeId], i: usize, anchor: Rect) {
     // It closes with what it edits: the selection, the grid row.
     let Some(list) = app.session.doc().ok().and_then(|doc| common(doc, ids, |n| n.grids.clone())) else {
@@ -694,7 +724,7 @@ pub(crate) fn grid_popover(app: &mut FigApp, ctx: &egui::Context, ids: &[NodeId]
         return;
     };
     // Beside the row, on the canvas side (the Perspective popover's placement) — lifted to stay
-    // inside the window. The row's press is held out of the outside-close, so the icon's own
+    // inside the window. The row's press is held out of the outside-close, so the row's own
     // click can toggle it shut.
     let screen_h = ctx.content_rect().height();
     let panel_left = app.ui.right_panel_rect.map(|r| r.left()).unwrap_or(anchor.left());
@@ -703,12 +733,55 @@ pub(crate) fn grid_popover(app: &mut FigApp, ctx: &egui::Context, ids: &[NodeId]
         .ui
         .grid_popover_pop
         .take()
-        .unwrap_or_else(|| crate::popover::Popover::with_id(Id::unique("grid_popover"), grid_label(&g)).width(POPOVER_W));
-    // The title follows the grid's name (the type dropdown renames it).
-    pop.title = grid_label(&g);
+        .unwrap_or_else(|| crate::popover::Popover::with_id(Id::unique("grid_popover"), "").width(POPOVER_W).no_header());
     pop = pop.at(at).close_on_outside(app.ui.grid_popover_shown);
     let hold = vec![anchor];
     let closed = pop.show(ctx, crate::popover::Open::At(at), crate::popover::Hold { rects: &hold, escape: false }, |ui| {
+        let t = Tokens::get(ui.ctx());
+        // The header: the type dropdown at the left, the close at the right.
+        let hr = row_rect(ui, 44.0, |ui| {
+            let type_label = match g.kind {
+                GridKind::Grid => tr("Grid"),
+                GridKind::Columns => tr("Columns"),
+                GridKind::Rows => tr("Rows"),
+            };
+            // Content-fit, like the reference's: the label, the caret and their insets.
+            let text_w = ui.painter().layout_no_wrap(type_label.to_string(), crate::theme::regular(11.0), egui::Color32::PLACEHOLDER).size().x;
+            let resp = widgets::dropdown(ui, type_label, (text_w + 32.0).max(72.0), None);
+            menu_popup(&resp).show(|ui| {
+                // The options read each type's own defaults (the reference's "Grid 10px", "5
+                // columns", "5 rows").
+                for (l, kind) in [
+                    (grid_label(&LayoutGrid::default()), GridKind::Grid),
+                    (grid_label(&LayoutGrid::columns()), GridKind::Columns),
+                    (grid_label(&LayoutGrid::rows()), GridKind::Rows),
+                ] {
+                    if menu_check(ui, kind == g.kind, &l, "") {
+                        let fresh = match kind {
+                            GridKind::Grid => LayoutGrid::default(),
+                            GridKind::Columns => LayoutGrid::columns(),
+                            GridKind::Rows => LayoutGrid::rows(),
+                        };
+                        app.set_props(ids, json!({"grids": grids_with(&list, i, |x| *x = fresh)}));
+                        ui.close();
+                    }
+                }
+            });
+        });
+        // The close, at the panel's right edge (the built-in header's rule: 8 pt in, 24 pt wide).
+        let close_rect = Rect::from_min_size(pos2(hr.max.x + 16.0 - 8.0 - 26.0, hr.center().y - 13.0), vec2(26.0, 26.0));
+        let close = ui.interact(close_rect, Id::unique("grid_pop_close"), Sense::click());
+        crate::a11y::describe(&close, tr("Close"));
+        if close.hovered() {
+            ui.painter().rect_filled(close_rect, CornerRadius::same(5), t.hover);
+        }
+        icons::paint(ui.painter(), Rect::from_center_size(close_rect.center(), vec2(16.0, 16.0)), Icon::Close, t.icon);
+        if close.clicked() {
+            app.ui.grid_popover = None;
+        }
+        // The hairline under the header, across the panel (the built-in header's rule).
+        ui.painter().rect_filled(Rect::from_min_max(pos2(hr.min.x - 16.0, hr.max.y), pos2(hr.max.x + 16.0, hr.max.y + 1.0)), CornerRadius::ZERO, t.border);
+        ui.add_space(8.0);
         grid_settings(app, ui, ids, &list, i, &g);
     });
     app.ui.grid_popover_pop = Some(pop);
