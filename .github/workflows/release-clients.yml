@@ -1,0 +1,107 @@
+name: Release clients
+
+# Builds the desktop clients with the repo's own packaging scripts and publishes them as a
+# GitHub Release: macOS universal DMG (+ CLI zip) and Windows x64 MSI (+ portable zip).
+# Unsigned (forks have no certificates): macOS is ad-hoc signed, Windows binaries are unsigned.
+# Trigger: a pushed `v*` tag, or a manual dispatch (tag input empty = `v<version from Cargo.toml>`).
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (empty: v<version from Cargo.toml>)"
+        type: string
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-clients-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Universal build: the arm64 runner also compiles the Intel slice and lipo's them.
+      - run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - run: bash packaging/macos/package.sh --arch universal
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: dist/release/figcraft-*-macos-*
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      # The MSI needs WiX v5 and its UI/Util extensions (packaging/windows/package.ps1 header).
+      - run: |
+          dotnet tool install --global wix --version 5.0.2
+          wix extension add -g WixToolset.UI.wixext/5.0.2
+          wix extension add -g WixToolset.Util.wixext/5.0.2
+      - run: packaging/windows/package.ps1 -Arch x64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: dist/release/figcraft-*-windows-x64.*
+          if-no-files-found: error
+
+  publish:
+    needs: [macos, windows]
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 25
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - id: tag
+        run: |
+          VERSION=$(awk '/^\[/{in_pkg=($0=="[workspace.package]");next} in_pkg && $1=="version"{gsub(/[" ]/,"",$3);print $3;exit}' Cargo.toml)
+          if [ -n "${{ inputs.tag }}" ]; then TAG="${{ inputs.tag }}"
+          elif [ "$GITHUB_REF_TYPE" = "tag" ]; then TAG="$GITHUB_REF_NAME"
+          else TAG="v$VERSION"; fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+      - name: Publish release
+        run: |
+          VERSION="${{ steps.tag.outputs.version }}"
+          TAG="${{ steps.tag.outputs.tag }}"
+          SHA="$(git rev-parse --short HEAD)"
+          {
+            echo "# FigCraft $VERSION — Mac / Win 客户端"
+            echo
+            echo "修改版 fork 构建 ([TDesign007/figcraft](https://github.com/TDesign007/figcraft))，基于上游 [storytold/figcraft](https://github.com/storytold/figcraft)，提交 \`$SHA\`。"
+            echo
+            echo "## 下载 / Downloads"
+            echo
+            echo "| 文件 | 系统 | 说明 |"
+            echo "|---|---|---|"
+            echo "| \`figcraft-$VERSION-macos-universal.dmg\` | macOS 11+（Apple Silicon 和 Intel） | 图形客户端，打开后拖入 Applications |"
+            echo "| \`figcraft-cli-$VERSION-macos-universal.zip\` | macOS | 命令行工具 figcraft-cli |"
+            echo "| \`figcraft-$VERSION-windows-x64.msi\` | Windows 10/11 x64 | 安装版（含开始菜单快捷方式） |"
+            echo "| \`figcraft-$VERSION-windows-x64-portable.zip\` | Windows 10/11 x64 | 便携版，解压即用 |"
+            echo
+            echo "## 安装注意 / Installation notes"
+            echo
+            echo "- **macOS**: 无 Apple 开发者签名（ad-hoc）。首次打开若提示\"无法验证开发者\"，请**右键 FigCraft.app → 打开**；或终端执行 \`xattr -cr /Applications/FigCraft.app\`。"
+            echo "- **Windows**: 无 Authenticode 签名。SmartScreen 提示时选择**\"更多信息\" → \"仍要运行\"**。exe 已静态链接 C 运行时，无需 VC++ Redistributable。"
+            echo
+            echo "## 近期改动 (recent changes)"
+            echo
+            echo "\`\`\`"
+            git log --oneline -15
+            echo "\`\`\`"
+          } > notes.md
+          gh release create "$TAG" dist/figcraft-* --title "FigCraft $VERSION — Mac & Win 客户端" --notes-file notes.md \
+            || gh release upload "$TAG" --clobber dist/figcraft-*
