@@ -136,7 +136,7 @@ pub(crate) fn popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId, i: usiz
         app.ui.persp_preview_rect = Some(prect);
         ui.painter().rect_filled(prect, CornerRadius::same(10), t.panel);
         let painter = ui.painter().with_clip_rect(prect.intersect(ui.clip_rect()));
-        preview(app, &painter, prect, id, distance, pw(), ph());
+        preview(app, &painter, prect, distance, pw(), ph());
         ui.add_space(8.0);
         // The distance: the label, then the slider well — the track with its
         // frustum fan, and the vanishing-point toggle at the end.
@@ -312,30 +312,28 @@ fn ph() -> u32 {
 }
 
 /// The depth cards into `prect`, through the render crate's composer, uploaded as a texture
-/// (rebuilt when the values move or the frame's render does).
-fn preview(app: &mut FigApp, painter: &egui::Painter, prect: Rect, id: NodeId, distance: f64, pw: u32, ph: u32) {
+/// (rebuilt when the values move — the cards are the reference's own artwork, independent of the
+/// frame's content).
+fn preview(app: &mut FigApp, painter: &egui::Painter, prect: Rect, distance: f64, pw: u32, ph: u32) {
     let revision = app.session.ds().map(|d| d.revision).unwrap_or(0);
     let key = (revision, pw, ph);
     let rebuild = match &app.ui.persp_preview {
         Some((k, _)) => *k != key,
         None => true,
     };
-    if rebuild {
-        let doc = app.session.doc().ok().cloned();
-        if let Some(doc) = doc
-            && let Some(pix) = figcraft_render::preview3d::cards(&doc, id, (pw, ph), distance)
-        {
-            let image = egui::ColorImage::from_rgba_premultiplied([pix.width() as usize, pix.height() as usize], pix.data());
-            let handle = match &app.ui.persp_preview {
-                Some((_, handle)) if handle.size() == image.size => {
-                    let mut cloned = handle.clone();
-                    cloned.set(image, egui::TextureOptions::LINEAR);
-                    cloned
-                }
-                _ => painter.ctx().load_texture("persp-preview", image, egui::TextureOptions::LINEAR),
-            };
-            app.ui.persp_preview = Some((key, handle));
-        }
+    if rebuild
+        && let Some(pix) = figcraft_render::preview3d::cards((pw, ph), distance)
+    {
+        let image = egui::ColorImage::from_rgba_premultiplied([pix.width() as usize, pix.height() as usize], pix.data());
+        let handle = match &app.ui.persp_preview {
+            Some((_, handle)) if handle.size() == image.size => {
+                let mut cloned = handle.clone();
+                cloned.set(image, egui::TextureOptions::LINEAR);
+                cloned
+            }
+            _ => painter.ctx().load_texture("persp-preview", image, egui::TextureOptions::LINEAR),
+        };
+        app.ui.persp_preview = Some((key, handle));
     }
     if let Some((_, handle)) = &app.ui.persp_preview {
         let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
