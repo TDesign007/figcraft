@@ -96,8 +96,9 @@ fn removing_a_fill_dismisses_the_picker() {
     assert_eq!(u.app.ui.picker, None);
 }
 
-/// Removing effects or grids moves open settings to the surviving row; the outside press
-/// dismisses the colour picker. Removing the open item closes its settings.
+/// Removing effects moves open settings to the surviving row; the outside press dismisses the
+/// colour picker, and closes a grid's settings popover. Removing the open item closes its
+/// settings.
 #[test]
 fn removing_effects_and_grids_keeps_open_settings_with_their_rows() {
     let mut s = Session::new();
@@ -123,12 +124,13 @@ fn removing_effects_and_grids_keeps_open_settings_with_their_rows() {
     click(&mut u, rm);
     assert!(!flag(&u, "fx_open", 0) && !flag(&u, "fx_open", 1));
     assert_eq!(u.app.ui.picker, None);
-    // Grid 1's settings open; grid 0 goes.
-    u.ctx.data_mut(|d| d.insert_temp(Id::unique(("grid_open", 1usize)), true));
+    // Grid 1's settings popover open; grid 0 goes — the press lands outside the popover, so it
+    // closes with the click (the settings live in a popover now, not under the row).
+    u.app.ui.grid_popover = Some((vec![f], 1, egui::Rect::NOTHING));
     let rm = remove_button(&mut u, "grids", 0);
     click(&mut u, rm);
     assert_eq!(u.app.session.doc().unwrap().node(f).unwrap().grids.len(), 1);
-    assert!(flag(&u, "grid_open", 0) && !flag(&u, "grid_open", 1));
+    assert!(u.app.ui.grid_popover.is_none(), "the outside press closed the popover");
 }
 
 /// The centre of the button labelled `label` (found in the AccessKit tree).

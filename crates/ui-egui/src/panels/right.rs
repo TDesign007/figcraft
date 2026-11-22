@@ -22,7 +22,7 @@ use crate::theme::{Tokens, regular, semibold};
 use crate::widgets::{self, Edit, FIELD_H, FieldEdit, Lead, PAD};
 use crate::{FigApp, RightTab};
 
-mod effects;
+pub(crate) mod effects;
 pub(crate) mod perspective;
 pub(crate) mod transform3d;
 mod inspect;
@@ -31,6 +31,7 @@ mod paints;
 mod stroke;
 
 pub(crate) use effects::effect_open;
+pub(crate) use effects::grid_popover;
 use effects::{effects, grids};
 use inspect::inspect;
 pub(crate) use inspect::{inspect_section, prop_row};

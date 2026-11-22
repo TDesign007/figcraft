@@ -1,8 +1,8 @@
 use super::menu::{add_menu_popup, context_popup, menu_check, menu_item, menu_item_enabled, menu_popup, row, row_context_menu, row_rect, row_target};
 use super::{
     Blur, BlurType, Document, Effect, EffectKind, FieldEdit, FigApp, Glass, GridAlign, GridKind, Icon, Id, LayoutGrid, Lead, ListDrag,
-    MAX_BLUR_RADIUS, NodeId, Noise, NoiseMode, Paint, Perspective, Sense, Shadow, StyleSlot, Texture, Transform3d, Ui, VariableType, common, icons, json, move_flags,
-    moved_index, remove_flags, removed_index, style_picker, tr, trf, trn, vec2, widgets,
+    MAX_BLUR_RADIUS, NodeId, Noise, NoiseMode, Paint, Perspective, Rect, Sense, Shadow, StyleSlot, Texture, Transform3d, Ui, VariableType,
+    common, icons, json, move_flags, moved_index, pos2, remove_flags, removed_index, style_picker, tr, trf, trn, vec2, widgets,
 };
 use crate::property_rows::PropertyKind;
 
@@ -471,10 +471,17 @@ fn fx_color(app: &mut FigApp, ui: &mut Ui, ids: &[NodeId], i: usize, e: &Effect,
     }
 }
 
-/// Draw the layout-grid list with add/style/type/toggle/remove/reorder, per-grid settings,
-/// and keep open-settings flags aligned when rows move or are removed.
+/// Draw the layout-grid list with add/style/type/toggle/remove/reorder, the settings popover
+/// (the row's grid icon toggles it) closing on another selection, on a press outside it, or
+/// with the grid it edits.
 pub(super) fn grids(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[NodeId]) {
     let ids = sel.to_vec();
+    // The popover edits the selection it opened on: another selection closes it (Figma's).
+    if let Some((open_ids, _, _)) = &app.ui.grid_popover
+        && open_ids != &ids
+    {
+        app.ui.grid_popover = None;
+    }
     let list = common(doc, sel, |n| n.grids.clone());
     let empty = list.as_ref().is_none_or(|l| l.is_empty());
     if let Some(i) = widgets::section_header(ui, tr("Layout grid"), &[(Icon::Styles, tr("Styles")), (Icon::Plus, tr("Add layout grid"))], empty) {
@@ -488,14 +495,15 @@ pub(super) fn grids(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[NodeId
     let Some(list) = list else { return };
     // The last grid first, like paints and effects; rows drag to reorder.
     let mut drag = ListDrag::new(ui, "grids");
-    let mut removed = None;
     for (i, g) in list.iter().enumerate().rev() {
-        let open_id = Id::unique(("grid_open", i));
-        let mut open = ui.data(|d| d.get_temp::<bool>(open_id)).unwrap_or(false);
+        // The grid icon is lit while this grid's settings popover is open.
+        let open = app.ui.grid_popover.as_ref().is_some_and(|(_, j, _)| *j == i);
         let header = row_rect(ui, 32.0, |ui| {
-            if icons::button(ui, Icon::Grid, 24.0, open, tr("Layout grid settings")).clicked() {
-                open = !open;
-                ui.data_mut(|d| d.insert_temp(open_id, open));
+            let grid_btn = icons::button(ui, Icon::Grid, 24.0, open, tr("Layout grid settings"));
+            if grid_btn.clicked() {
+                // The settings live in a popover beside the row (Figma's), not below it: the
+                // icon toggles it, one grid's at a time.
+                app.ui.grid_popover = if open { None } else { Some((ids.clone(), i, grid_btn.rect)) };
             }
             let w = ui.available_width() - 60.0;
             let resp = widgets::dropdown(ui, &grid_label(g), w, None);
@@ -521,22 +529,14 @@ pub(super) fn grids(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[NodeId
             if toggle {
                 app.set_props(&ids, json!({"grids": grids_with(&list, i, |x| x.visible = !x.visible)}));
             }
-            if remove && app.run("grid.remove", json!({"ids": ids, "index": i})).is_some() {
-                removed = Some(i);
+            if remove {
+                app.run("grid.remove", json!({"ids": ids, "index": i}));
             }
         });
-        if open {
-            grid_settings(app, ui, &ids, &list, i, g);
-        }
         drag.row(ui, i, header, header.with_max_y(ui.cursor().min.y.max(header.max.y)), || grid_label(g));
     }
     if let Some((from, to)) = drag.finish(ui) {
         app.run("grid.move", json!({"ids": ids, "from": from, "to": to}));
-        move_flags(ui, "grid_open", list.len(), from, to);
-    }
-    // Open settings stay with their grids, or go with theirs.
-    if let Some(i) = removed {
-        remove_flags(ui, "grid_open", list.len(), i);
     }
 }
 
@@ -672,4 +672,49 @@ fn grid_settings(app: &mut FigApp, ui: &mut Ui, ids: &[NodeId], list: &[LayoutGr
         let e = widgets::number_field(ui, Id::unique(("grid_alpha", i)), Lead::None, Some((f64::from(g.color.a) * 100.0).round()), "%", 56.0, 1.0);
         app.field_run(e, "node.set", |v| set(&|x| x.color = x.color.with_alpha((v / 100.0).clamp(0.0, 1.0) as f32)));
     });
+}
+
+/// The settings popover's width (the Perspective popover's).
+const POPOVER_W: f32 = 250.0;
+
+/// The layout grid's settings popover (Figma's): the row's grid icon opens it beside the row, on
+/// the canvas side, and it edits the grid like the panel's own fields do. Its title is the grid's
+/// name, which moves with it when the type changes. Clears the state itself when what it edits is
+/// gone.
+pub(crate) fn grid_popover(app: &mut FigApp, ctx: &egui::Context, ids: &[NodeId], i: usize, anchor: Rect) {
+    // It closes with what it edits: the selection, the grid row.
+    let Some(list) = app.session.doc().ok().and_then(|doc| common(doc, ids, |n| n.grids.clone())) else {
+        app.ui.grid_popover = None;
+        app.ui.grid_popover_shown = false;
+        return;
+    };
+    let Some(g) = list.get(i).cloned() else {
+        app.ui.grid_popover = None;
+        app.ui.grid_popover_shown = false;
+        return;
+    };
+    // Beside the row, on the canvas side (the Perspective popover's placement) — lifted to stay
+    // inside the window. The row's press is held out of the outside-close, so the icon's own
+    // click can toggle it shut.
+    let screen_h = ctx.content_rect().height();
+    let panel_left = app.ui.right_panel_rect.map(|r| r.left()).unwrap_or(anchor.left());
+    let at = pos2((panel_left - POPOVER_W - 8.0).max(8.0), anchor.top().max(8.0).min((screen_h - 340.0).max(8.0)));
+    let mut pop = app
+        .ui
+        .grid_popover_pop
+        .take()
+        .unwrap_or_else(|| crate::popover::Popover::with_id(Id::unique("grid_popover"), grid_label(&g)).width(POPOVER_W));
+    // The title follows the grid's name (the type dropdown renames it).
+    pop.title = grid_label(&g);
+    pop = pop.at(at).close_on_outside(app.ui.grid_popover_shown);
+    let hold = vec![anchor];
+    let closed = pop.show(ctx, crate::popover::Open::At(at), crate::popover::Hold { rects: &hold, escape: false }, |ui| {
+        grid_settings(app, ui, ids, &list, i, &g);
+    });
+    app.ui.grid_popover_pop = Some(pop);
+    app.ui.grid_popover_shown = true;
+    if closed {
+        app.ui.grid_popover = None;
+        app.ui.grid_popover_shown = false;
+    }
 }

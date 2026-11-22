@@ -1098,39 +1098,23 @@ fn type_at(u: &mut Ui, id: Id, text: &str) {
     u.frame(vec![]);
 }
 
-/// A frame with one layout grid, its settings open in the Design panel.
+/// A frame with one layout grid, its settings open in a popover beside the row (the state the
+/// row's grid icon keeps).
 fn grid_ui(grid: serde_json::Value) -> (Ui, NodeId) {
     let mut s = Session::new();
     let f = id(s.execute("frame.create", &json!({"x": 0, "y": 0, "width": 400, "height": 300})).unwrap());
     s.execute("node.set", &json!({"ids": [f], "props": {"grids": [grid]}})).unwrap();
     s.execute("select.set", &json!({"ids": [f]})).unwrap();
     let mut u = Ui::new(s);
-    u.ctx.data_mut(|d| d.insert_temp(Id::unique(("grid_open", 0usize)), true));
+    u.frame(vec![]);
+    u.app.ui.grid_popover = Some((vec![f], 0, egui::Rect::from_min_max(pos2(700.0, 200.0), pos2(724.0, 232.0))));
+    // Three frames: the first lays the popover out invisibly (egui's sizing pass), the second
+    // draws it, the third settles egui's widget-rect map on the drawn position (reads between
+    // passes return the second-to-last pass's rects).
+    u.frame(vec![]);
+    u.frame(vec![]);
     u.frame(vec![]);
     (u, f)
-}
-
-/// Scroll the Design panel (over its own field `id`) until that field is on the test screen: the
-/// grid settings sit below the fold.
-fn scroll_to(u: &mut Ui, id: Id) {
-    let wheel = Event::MouseWheel {
-        unit: egui::MouseWheelUnit::Point,
-        source: egui::MouseWheelSource::Unknown,
-        delta: egui::vec2(0.0, -300.0),
-        phase: egui::TouchPhase::Move,
-        modifiers: Modifiers::NONE,
-    };
-    for _ in 0..10 {
-        let p = at(u, id);
-        if p.y < 860.0 {
-            break;
-        }
-        u.frame(vec![Event::PointerMoved(pos2(p.x, 500.0)), wheel.clone()]);
-        // Let the scroll settle.
-        for _ in 0..30 {
-            u.frame(vec![]);
-        }
-    }
 }
 
 /// The word for Auto types 0 only where 0 *is* the automatic value: a fixed layout grid's count
@@ -1141,7 +1125,6 @@ fn typing_auto_is_zero_only_where_zero_is_the_automatic_value() {
     let count_id = Id::unique(("grid_field", "count", 0usize));
     let (mut u, f) = grid_ui(json!({"kind": "columns", "align": "min", "count": 3, "size": 8, "gutter": 10}));
     let count = |u: &Ui| u.app.session.doc().unwrap().node(f).unwrap().grids[0].count;
-    scroll_to(&mut u, count_id);
     type_at(&mut u, count_id, "Auto");
     assert_eq!(count(&u), 0, "a fixed grid's count: Auto is 0");
     type_at(&mut u, count_id, "4");
@@ -1149,7 +1132,6 @@ fn typing_auto_is_zero_only_where_zero_is_the_automatic_value() {
     // A stretched grid works its width out from the frame: the field shows Auto and takes no edit.
     let (mut u, f) = grid_ui(json!({"kind": "columns", "align": "stretch", "count": 3, "size": 0}));
     let size_id = Id::unique(("grid_field", "size", 0usize));
-    scroll_to(&mut u, size_id);
     type_at(&mut u, size_id, "40");
     assert_eq!(u.app.session.doc().unwrap().node(f).unwrap().grids[0].size, 0.0, "a stretched grid's width isn't set");
     // Nor its count: a stretched grid has at least one band, so the word commits nothing.
@@ -1168,6 +1150,50 @@ fn typing_auto_is_zero_only_where_zero_is_the_automatic_value() {
     let before = gap(&u);
     type_at(&mut u, Id::unique("al_gap"), "Auto");
     assert_eq!(gap(&u), before, "the word isn't a value where Auto is a mode");
+}
+
+/// The centre of the button labelled `label` (found in the AccessKit tree).
+fn button(u: &mut Ui, label: &str) -> Pos2 {
+    let out = u.frame_output(vec![]);
+    let b = out
+        .platform_output
+        .accesskit_update
+        .expect("an AccessKit update")
+        .nodes
+        .into_iter()
+        .find(|(_, n)| n.label() == Some(label))
+        .and_then(|(_, n)| n.bounds())
+        .unwrap_or_else(|| panic!("no {label:?} button"));
+    Pos2::new(((b.x0 + b.x1) / 2.0) as f32, ((b.y0 + b.y1) / 2.0) as f32)
+}
+
+/// The grid icon opens the grid's settings as a popover beside the row (Figma's interaction) and
+/// toggles it shut; nothing expands inline under the row any more.
+#[test]
+fn the_grid_icon_toggles_a_settings_popover_instead_of_expanding() {
+    let mut s = Session::new();
+    let f = id(s.execute("frame.create", &json!({"x": 0.0, "y": 0.0, "width": 400.0, "height": 300.0})).unwrap());
+    s.execute("grid.add", &json!({"ids": [f]})).unwrap();
+    s.execute("select.set", &json!({"ids": [f]})).unwrap();
+    let mut u = Ui::new(s);
+    u.ctx.enable_accesskit();
+    u.frame(vec![]);
+    // The icon opens it (the first frame after the click lays the popover out invisibly).
+    let icon = button(&mut u, "Layout grid settings");
+    click(&mut u, icon);
+    u.frame(vec![]);
+    u.frame(vec![]);
+    let (_, i, _) = u.app.ui.grid_popover.clone().expect("the icon opened the popover");
+    assert_eq!(i, 0);
+    let panel = u.ctx.memory(|m| m.area_rect(egui::Id::unique("grid_popover"))).expect("the popover laid out");
+    let field = u.ctx.read_response(Id::unique(("grid_field", "size", 0usize)).with("field")).expect("the size field").rect;
+    assert!(panel.contains(field.min) && panel.contains(field.max), "the settings live in the popover: {field:?} vs {panel:?}");
+    let right = u.app.ui.right_panel_rect.expect("the panel is drawn");
+    assert!(!right.intersects(field), "and not inline in the panel: {field:?} vs {:?}", right);
+    // The icon toggles it shut.
+    let icon = button(&mut u, "Layout grid settings");
+    click(&mut u, icon);
+    assert!(u.app.ui.grid_popover.is_none(), "the icon toggled it shut");
 }
 
 /// Save starts after the field commits, even if the next raw input releases a tab click first.

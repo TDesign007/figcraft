@@ -699,6 +699,13 @@ pub fn popups(app: &mut FigApp, ctx: &egui::Context) {
         app.ui.persp_popover_shown = false;
         app.ui.persp_vp = false;
     }
+    // The layout grid's settings popover, while one is open (it edits the grid like the panel's
+    // own fields do — the row's grid icon toggles it).
+    if let Some((ids, i, at)) = app.ui.grid_popover.clone() {
+        crate::panels::right::grid_popover(app, ctx, &ids, i, at);
+    } else {
+        app.ui.grid_popover_shown = false;
+    }
 }
 
 /// The context menu's Copy as submenu: its key in the tree, and the marker row in the entries.

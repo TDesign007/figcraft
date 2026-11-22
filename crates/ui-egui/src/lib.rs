@@ -548,6 +548,14 @@ pub struct UiState {
     pub persp_preview_rect: Option<egui::Rect>,
     /// The distance slider's well rect, as drawn last frame.
     pub persp_slider_rect: Option<egui::Rect>,
+    /// The layout grid's settings popover: the selection it edits, the grid row's index, and the
+    /// row's grid-icon rect (it opens beside the row, on the canvas side, like the Perspective
+    /// popover's). `None` when closed.
+    pub grid_popover: Option<(Vec<NodeId>, usize, egui::Rect)>,
+    /// The popover has drawn at least once (its opening frame's press is spared).
+    pub grid_popover_shown: bool,
+    /// The popover's chrome (its placement and size, kept between frames).
+    pub grid_popover_pop: Option<crate::popover::Popover>,
     /// A message at the bottom of the window and how long it has been showing.
     pub toast: Option<(String, ToastClock)>,
     pub present: Option<present::Presenter>,
@@ -777,6 +785,9 @@ impl Default for UiState {
             persp_vp: false,
             persp_preview_rect: None,
             persp_slider_rect: None,
+            grid_popover: None,
+            grid_popover_shown: false,
+            grid_popover_pop: None,
             toast: None,
             present: None,
             presents: Vec::new(),

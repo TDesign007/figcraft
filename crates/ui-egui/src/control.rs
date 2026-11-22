@@ -1237,6 +1237,22 @@ fn ui_set_view(app: &mut FigApp, ctx: &Context, p: &Value) -> Result<(), String>
     if let Some(open) = p.get("perspVp").and_then(Value::as_bool) {
         app.ui.persp_vp = open;
     }
+    // The layout grid's settings popover, the same way: `{"gridPopover": {"index": 0}}`, null to
+    // close. It edits the current selection's grid `index`.
+    match p.get("gridPopover") {
+        Some(Value::Null) => {
+            app.ui.grid_popover = None;
+        }
+        Some(v) => {
+            let index = v.get("index").and_then(Value::as_u64).unwrap_or(0) as usize;
+            // The row's place, as the anchor (the popover's own placement lifts it inside the
+            // window; the selection's frames carry the grids).
+            let panel_left = app.ui.right_panel_rect.map(|r| r.left()).unwrap_or(0.0);
+            let row = egui::Rect::from_min_size(egui::pos2(panel_left, 640.0), egui::vec2(150.0, 30.0));
+            app.ui.grid_popover = Some((app.session.selection().to_vec(), index, row));
+        }
+        None => {}
+    }
     Ok(())
 }
 
