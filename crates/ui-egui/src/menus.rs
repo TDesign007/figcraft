@@ -690,6 +690,15 @@ pub fn popups(app: &mut FigApp, ctx: &egui::Context) {
         app.ui.t3_origin_open = false;
         app.ui.t3_popover_shown = false;
     }
+    // The Perspective popover, while one is open (it edits the frame's camera distance like the
+    // fields do). Its vanishing-point marker lives only while it does.
+    if let Some((id, i, at)) = app.ui.persp_popover {
+        let tokens = crate::theme::Tokens::get(ctx);
+        crate::panels::right::perspective::popover(app, ctx, id, i, at, &tokens);
+    } else {
+        app.ui.persp_popover_shown = false;
+        app.ui.persp_vp = false;
+    }
 }
 
 /// The context menu's Copy as submenu: its key in the tree, and the marker row in the entries.

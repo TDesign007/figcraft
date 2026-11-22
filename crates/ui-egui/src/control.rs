@@ -1217,6 +1217,26 @@ fn ui_set_view(app: &mut FigApp, ctx: &Context, p: &Value) -> Result<(), String>
     if let Some(open) = p.get("t3Pivot").and_then(Value::as_bool) {
         app.ui.t3_origin_open = open;
     }
+    // The Perspective popover, the same way: `{"perspPopover": {"id": 2, "index": 0}}`, null to
+    // close; `{"perspVp": true}` toggles the canvas vanishing-point marker (it needs the popover).
+    match p.get("perspPopover") {
+        Some(Value::Null) => {
+            app.ui.persp_popover = None;
+        }
+        Some(v) => {
+            let id = v.get("id").and_then(figcraft_engine::params::id_of).ok_or("`perspPopover.id` required")?;
+            let index = v.get("index").and_then(Value::as_u64).unwrap_or(0) as usize;
+            // The row's place: as the anchor, the panel's left edge at the top of the property
+            // rows; the popover's own placement lifts it inside the window.
+            let panel_left = app.ui.right_panel_rect.map(|r| r.left()).unwrap_or(0.0);
+            let row = egui::Rect::from_min_size(egui::pos2(panel_left, 320.0), egui::vec2(150.0, 30.0));
+            app.ui.persp_popover = Some((id, index, row));
+        }
+        None => {}
+    }
+    if let Some(open) = p.get("perspVp").and_then(Value::as_bool) {
+        app.ui.persp_vp = open;
+    }
     Ok(())
 }
 

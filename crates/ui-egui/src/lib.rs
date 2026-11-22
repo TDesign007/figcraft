@@ -219,6 +219,8 @@ mod pen_mode_tests;
 #[cfg(test)]
 mod perf_tests;
 #[cfg(test)]
+mod perspective_ui_tests;
+#[cfg(test)]
 mod plugin_panel_tests;
 #[cfg(test)]
 mod plugin_save_ui_tests;
@@ -530,6 +532,22 @@ pub struct UiState {
     pub t3_preview_rect: Option<egui::Rect>,
     /// The header's settings (sliders) button rect, as drawn last frame.
     pub t3_settings_btn_rect: Option<egui::Rect>,
+    /// The Perspective popover: the frame and effect row it edits, and the row's rect (it opens
+    /// beside the row, on the canvas side, like the 3D transform's). `None` when closed.
+    pub persp_popover: Option<(NodeId, usize, egui::Rect)>,
+    /// The popover has drawn at least once (its opening frame's press is spared).
+    pub persp_popover_shown: bool,
+    /// The popover's chrome (its placement and size, kept between frames).
+    pub persp_popover_pop: Option<crate::popover::Popover>,
+    /// The preview texture (the depth cards), keyed by the raster that built it.
+    pub persp_preview: Option<((u64, u32, u32), egui::TextureHandle)>,
+    /// The canvas vanishing-point marker shows while the popover is open (the slider row's
+    /// square toggle).
+    pub persp_vp: bool,
+    /// The preview panel's rect, as drawn last frame.
+    pub persp_preview_rect: Option<egui::Rect>,
+    /// The distance slider's well rect, as drawn last frame.
+    pub persp_slider_rect: Option<egui::Rect>,
     /// A message at the bottom of the window and how long it has been showing.
     pub toast: Option<(String, ToastClock)>,
     pub present: Option<present::Presenter>,
@@ -752,6 +770,13 @@ impl Default for UiState {
             t3_reset_rect: None,
             t3_preview_rect: None,
             t3_settings_btn_rect: None,
+            persp_popover: None,
+            persp_popover_shown: false,
+            persp_popover_pop: None,
+            persp_preview: None,
+            persp_vp: false,
+            persp_preview_rect: None,
+            persp_slider_rect: None,
             toast: None,
             present: None,
             presents: Vec::new(),

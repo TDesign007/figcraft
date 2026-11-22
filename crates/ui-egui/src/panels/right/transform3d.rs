@@ -300,7 +300,7 @@ fn ph() -> u32 {
 
 /// A label at the row's left inset. It uses the panel's secondary ink (not `menu_text`, which
 /// is white: invisible on the light panel); the text is the translated key.
-fn label_at(ui: &mut egui::Ui, t: &Tokens, label: &str, inset: f32) {
+pub(crate) fn label_at(ui: &mut egui::Ui, t: &Tokens, label: &str, inset: f32) {
     let galley = ui.painter().layout_no_wrap(label.to_string(), regular(12.0), t.text_secondary);
     let cy = ui.cursor().center().y - galley.size().y / 2.0;
     ui.painter().galley(pos2(ui.cursor().min.x + inset, cy), galley, t.text_secondary);
@@ -610,7 +610,7 @@ fn cube_icon(ui: &mut egui::Ui, t: &Tokens) {
 }
 
 /// The layer's name in a rounded pill, elided to `max_w`.
-fn name_pill(ui: &mut egui::Ui, t: &Tokens, name: &str, max_w: f32) {
+pub(crate) fn name_pill(ui: &mut egui::Ui, t: &Tokens, name: &str, max_w: f32) {
     let inner = (max_w - 12.0).max(0.0);
     let text = crate::widgets::elide_font(ui, name, inner, regular(11.0));
     let galley = ui.painter().layout_no_wrap(text, regular(11.0), t.text_secondary);

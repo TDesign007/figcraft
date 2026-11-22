@@ -112,6 +112,8 @@ icons! {
     AutoLayout,
     ClipContent,
     Effects,
+    /// A ground plane in perspective: the receding trapezoid with its converging grid lines.
+    Perspective,
     Styles,
     Menu,
     Play,

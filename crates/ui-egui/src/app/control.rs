@@ -120,6 +120,12 @@ impl FigApp {
             "settingsRect": self.ui.t3_settings_pop.as_ref().map(|p| [p.rect.min.x, p.rect.min.y, p.rect.max.x, p.rect.max.y]),
             "pivotRect": self.ui.t3_pivot_pop.as_ref().map(|p| [p.rect.min.x, p.rect.min.y, p.rect.max.x, p.rect.max.y]),
         });
+        // The Perspective popover, as the live agent loop sees it.
+        state["persp"] = json!({
+            "open": self.ui.persp_popover.is_some(),
+            "vp": self.ui.persp_vp,
+            "mainRect": self.ui.persp_popover_pop.as_ref().map(|p| [p.rect.min.x, p.rect.min.y, p.rect.max.x, p.rect.max.y]),
+        });
         state
     }
 }

@@ -138,6 +138,7 @@ pub(super) fn overlays(app: &FigApp, painter: &egui::Painter, t: &Tokens) -> Vec
     }
     // The 3D transform's gizmo for the selection: the dashed original box and the axis rings.
     crate::canvas::gizmo::draw(app, painter, &doc, &sel);
+    vanishing_point(app, painter, &doc);
     // Smart guides and measurements (their labels kept clear of the size label).
     crate::measure_overlay::draw(app, painter, t, size_label);
     // Marquee.
@@ -839,6 +840,24 @@ pub(super) fn accent(p: &egui::Painter) -> Color32 {
 fn pick_outline(app: &FigApp, painter: &egui::Painter, doc: &Document) {
     if let Some(p) = app.picked().filter(|p| doc.node(*p).is_some()) {
         draw_outline(app, painter, doc, p, stroke(crate::handles::PINK, 2.0));
+    }
+}
+
+/// The Perspective popover's vanishing-point marker: a crosshair at the camera's origin on the
+/// frame — the point its descendants' receding depth converges on — shown only while the
+/// popover asks for it (the slider row's square toggle).
+fn vanishing_point(app: &FigApp, painter: &egui::Painter, doc: &Document) {
+    if !app.ui.persp_vp {
+        return;
+    }
+    let Some((id, _, _)) = app.ui.persp_popover else { return };
+    let Some(n) = doc.node(id) else { return };
+    let c = doc.world_transform(id) * Point::new(n.width / 2.0, n.height / 2.0);
+    let at = app.to_screen(c.x, c.y);
+    let ink = accent(painter);
+    painter.circle_stroke(at, 5.0, stroke(ink, 1.2));
+    for (dx, dy) in [(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)] {
+        painter.line_segment([at + vec2(dx * 5.0, dy * 5.0), at + vec2(dx * 9.0, dy * 9.0)], stroke(ink, 1.2));
     }
 }
 

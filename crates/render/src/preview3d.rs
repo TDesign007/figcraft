@@ -149,6 +149,131 @@ fn turned(n: &Node) -> Option<Transform3d> {
     })
 }
 
+/// How far the cards preview's outer copies sit behind the plane: shares of the layer's
+/// diagonal, in page px. Fixed depths (not shares of the camera distance) are what make the
+/// slider read as the camera moving: the same scene through a nearer camera spreads more.
+const CARD_DEPTHS: [f64; 3] = [0.0, -1.6, -3.2];
+/// The gap between neighbouring cards, as a share of the layer's width.
+const CARD_GAP: f64 = 0.3;
+/// The dashed bounds' ink (a mid grey that reads on the light and the dark panel alike).
+const DASH_INK: (u8, u8, u8) = (0x96, 0x96, 0x96);
+
+/// The perspective popover's preview: the layer drawn three times, receding in depth under the
+/// camera `distance` — the plane itself in the middle (the largest), two copies further away at
+/// the fixed page depths (smaller, keystoned by their sideways offsets like real planes would
+/// be) — with a dashed bounds round the three. A nearer camera shrinks the far cards harder, so
+/// scrubbing the slider reads as the camera moving through the scene.
+pub fn cards(doc: &Document, id: NodeId, size: (u32, u32), distance: f64) -> Option<Pixmap> {
+    let n = doc.node(id)?;
+    let (pw, ph) = (f64::from(size.0), f64::from(size.1));
+    if pw < 8.0 || ph < 8.0 {
+        return None;
+    }
+    let d = if distance.is_finite() { distance.clamp(1.0, 100_000.0) } else { 800.0 };
+    let (w, h) = (n.width.max(1.0), n.height.max(1.0));
+    let pivot = (w / 2.0, h / 2.0);
+    // Each depth's projected scale: d / (d − z), the same divide the canvas draws with. The
+    // middle card sits on the plane itself (scale 1), the outer two further away (smaller).
+    let depths = CARD_DEPTHS.map(|share| share * w.hypot(h));
+    let scales: [f64; 3] = std::array::from_fn(|i| d / (d - depths[i]));
+    // The sideways offsets, laid out in projected units around the middle card (a gap of about
+    // a third of the layer's width), converted back into the planes' own units: applied to the
+    // plane's points ahead of the projection, so the off-centre cards pick up the keystone.
+    let side = |i: usize| (w * scales[0] + w * scales[i]) / 2.0 + CARD_GAP * w;
+    let offsets = [-side(1), 0.0, side(2)];
+    let rect = Rect::new(0.0, 0.0, w, h);
+    let plane = |z: f64| figcraft_doc::transform3d::plane_homography(&Transform3d { depth: z, ..Default::default() }, pivot, Some(d));
+    // Left to right: the −1.6-diagonal copy, the plane itself, the −3.2 one.
+    let order = [1, 0, 2];
+    let cards: [Homography; 3] = std::array::from_fn(|i| {
+        let k = order[i];
+        plane(depths[k]).mul(Homography::from_affine(Affine::translate((offsets[i] / scales[k], 0.0))))
+    });
+    // The fit: the three cards' projected extent, 72% of the panel like the slab preview.
+    let (mut x0, mut x1, mut y0, mut y1) = (f64::INFINITY, f64::NEG_INFINITY, f64::INFINITY, f64::NEG_INFINITY);
+    for card in &cards {
+        let q = card.quad(rect);
+        let (a, b) = extent(&q, |p| p.x);
+        let (c, e) = extent(&q, |p| p.y);
+        x0 = x0.min(a);
+        x1 = x1.max(b);
+        y0 = y0.min(c);
+        y1 = y1.max(e);
+    }
+    let (span_x, span_y) = ((x1 - x0).max(1.0), (y1 - y0).max(1.0));
+    let fit = ((pw * 0.72) / span_x).min((ph * 0.72) / span_y).min(8.0);
+    if !(fit.is_finite() && fit > 0.0) {
+        return None;
+    }
+    // The layer's flat render (the cards' shared face), in page coordinates.
+    let bounds = crate::raster_bounds(doc, id)?;
+    let content_w = ((bounds.width() * fit * 2.0).ceil().min(1024.0) as u32).max(1);
+    let content_h = ((bounds.height() * fit * 2.0).ceil().min(1024.0) as u32).max(1);
+    let view = crate::View { origin: (bounds.x0, bounds.y0), scale: (fit * 2.0).min(8.0), width: content_w, height: content_h };
+    let content = crate::render_alone(doc, id, &view, crate::Alone::Plain)?;
+    let rs = f64::from(content.width()) / bounds.width().max(1e-6);
+    // Page → preview: through the layer's placement, then each card's offset plane, then the fit.
+    let world_inv = Homography::from_affine(doc.world_transform(id).inverse());
+    let mut out = Pixmap::new(size.0, size.1)?;
+    for card in &cards {
+        let full = place_homography(pw, ph, fit, pivot).mul(*card).mul(world_inv);
+        let q = full.quad(rect);
+        let (a, b) = extent(&q, |p| p.x);
+        let (c, e) = extent(&q, |p| p.y);
+        x0 = x0.min(a);
+        x1 = x1.max(b);
+        y0 = y0.min(c);
+        y1 = y1.max(e);
+        if let Some((face, at)) = warp(&content, bounds, rs, &full, size.0, size.1) {
+            composite(&mut out, at, &face, 1.0, figcraft_color::BlendMode::Normal);
+        }
+    }
+    // The dashed bounds, a padding out from the cards' union (the reference's selection box).
+    dashed_rect(&mut out, Rect::new(x0, y0, x1, y1), 12.0, pw, ph);
+    Some(out)
+}
+
+/// Dashed bars along the four sides of `quad` (a hand-laid dash: the raster draws fills, not
+/// strokes), padded out by `pad` px and kept inside the pixmap.
+fn dashed_rect(pix: &mut Pixmap, quad: Rect, pad: f64, pw: f64, ph: f64) {
+    let x0 = (quad.x0 - pad).max(1.0).round();
+    let y0 = (quad.y0 - pad).max(1.0).round();
+    let x1 = (quad.x1 + pad).min(pw - 1.0).round();
+    let y1 = (quad.y1 + pad).min(ph - 1.0).round();
+    if x1 - x0 < 8.0 || y1 - y0 < 8.0 {
+        return;
+    }
+    let (dash, gap) = (6.0f64, 5.0f64);
+    let mut pb = tiny_skia::PathBuilder::new();
+    // Pairs of bars on the two sides of one axis: `a`/`b` are the fixed coordinates, `t` walks
+    // the other axis in dash-gap steps.
+    let run = |pb: &mut tiny_skia::PathBuilder, mut t: f64, end: f64, a: f64, b: f64, vertical: bool| {
+        while t < end {
+            let e = (t + dash).min(end);
+            if e - t >= 1.0 {
+                for fixed in [a, b] {
+                    let r = if vertical {
+                        tiny_skia::Rect::from_xywh(fixed as f32, t as f32, 1.0, (e - t) as f32)
+                    } else {
+                        tiny_skia::Rect::from_xywh(t as f32, fixed as f32, (e - t) as f32, 1.0)
+                    };
+                    if let Some(r) = r {
+                        pb.push_rect(r);
+                    }
+                }
+            }
+            t = e + gap;
+        }
+    };
+    run(&mut pb, x0, x1, y0, y1 - 1.0, false);
+    run(&mut pb, y0, y1, x0, x1 - 1.0, true);
+    if let Some(path) = pb.finish() {
+        let (r, g, b) = DASH_INK;
+        let paint = tiny_skia::Paint { shader: tiny_skia::Shader::SolidColor(css(r, g, b)), anti_alias: false, ..Default::default() };
+        pix.fill_path(&path, &paint, tiny_skia::FillRule::Winding, Transform::identity(), None);
+    }
+}
+
 /// The fitted placement: the turned plane's local coordinates (the pivot kept in place by the
 /// turn) onto the panel, with the pivot at its centre.
 fn place_homography(pw: f64, ph: f64, fit: f64, pivot: (f64, f64)) -> Homography {
@@ -216,7 +341,6 @@ fn css(r: u8, g: u8, b: u8) -> tiny_skia::Color {
     tiny_skia::Color::from_rgba8(r, g, b, 255)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::slab_thickness;
@@ -254,5 +378,61 @@ mod tests {
         assert!(slab_thickness(&deep, 100.0, 80.0).abs() >= 30.0, "a depth extrudes the body");
         let z_only = Transform3d { rotate_z: 45.0, ..Default::default() };
         assert_eq!(slab_thickness(&z_only, 100.0, 80.0), 0.0, "a Z turn stays in the plane");
+    }
+
+    /// A 100 × 80 red rectangle layer at the page's origin (the cards' shared face).
+    fn rect_doc() -> (figcraft_doc::Document, figcraft_doc::NodeId) {
+        use figcraft_doc::NodeKind;
+        let mut d = figcraft_doc::Document::new("cards");
+        let p = d.first_page().unwrap();
+        let r = d.create(p, NodeKind::Rectangle, "R", 0.0, 0.0, 100.0, 80.0).unwrap();
+        d.get_mut(r).unwrap().fills = vec![figcraft_color::Paint::solid(figcraft_color::Color::from_hex("FF0000").unwrap())];
+        (d, r)
+    }
+
+    /// The set pixels in one horizontal third of `pix` (a column band over the row-major buffer).
+    fn ink(pix: &tiny_skia::Pixmap, third: usize) -> u64 {
+        let w = pix.width() as usize;
+        let (from, to) = (w * third / 3, w * (third + 1) / 3);
+        pix.pixels().iter().enumerate().filter(|(i, c)| c.alpha() > 0 && *i % w >= from && *i % w < to).count() as u64
+    }
+
+    #[test]
+    fn the_cards_preview_shows_three_cards_with_the_middle_the_largest() {
+        let (d, r) = rect_doc();
+        let pix = super::cards(&d, r, (460, 360), 800.0).unwrap();
+        let (left, mid, right) = (ink(&pix, 0), ink(&pix, 1), ink(&pix, 2));
+        assert!(left > 50 && mid > 50 && right > 50, "a card in every third: {left} {mid} {right}");
+        assert!(mid > left && mid > right, "the middle card is the largest: {left} {mid} {right}");
+        assert!(left > right, "the nearer of the two far cards is the larger: {left} {mid} {right}");
+    }
+
+    #[test]
+    fn a_nearer_camera_spreads_the_cards_more() {
+        let (d, r) = rect_doc();
+        // The far card's share of the middle card's ink: it falls as the camera closes in.
+        let ratio = |distance: f64| {
+            let pix = super::cards(&d, r, (460, 360), distance).unwrap();
+            ink(&pix, 2) as f64 / ink(&pix, 1) as f64
+        };
+        let (near, mid, far) = (ratio(300.0), ratio(900.0), ratio(5000.0));
+        assert!(near < mid && mid < far, "the far card shrinks as the camera closes: {near} {mid} {far}");
+    }
+
+    #[test]
+    fn the_dashed_bounds_are_drawn_round_the_cards() {
+        let (d, r) = rect_doc();
+        let pix = super::cards(&d, r, (460, 360), 800.0).unwrap();
+        let (dr, dg, db) = super::DASH_INK;
+        let dashes = pix.pixels().iter().filter(|c| c.alpha() == 255 && c.red() == dr && c.green() == dg && c.blue() == db).count();
+        assert!(dashes > 40, "the dashed bounds' bars are drawn: {dashes}");
+    }
+
+    #[test]
+    fn an_unsafe_distance_is_sanitized() {
+        let (d, r) = rect_doc();
+        for distance in [0.0, -50.0, f64::NAN, f64::INFINITY, 1e12] {
+            assert!(super::cards(&d, r, (460, 360), distance).is_some(), "{distance} still renders");
+        }
     }
 }

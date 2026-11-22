@@ -35,12 +35,17 @@ pub(super) fn effects(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[Node
                 let first = ids.first().copied();
                 let before = first.and_then(|id| app.session.doc().ok().and_then(|d| d.node(id).map(|n| n.effects.len())));
                 app.run("effect.add", json!({"ids": ids, "type": ty}));
-                if ty == "transform3d"
-                    && let (Some(id), Some(index)) = (first, before)
-                {
-                    app.ui.t3_popover = Some((id, index, at));
-                    app.ui.t3_settings_open = false;
-                    app.ui.t3_origin_open = false;
+                if let (Some(id), Some(index)) = (first, before) {
+                    // The 3D transform and Perspective open their popovers in the same click
+                    // (Figma's add menu), anchored at the button that added them.
+                    if ty == "transform3d" {
+                        app.ui.t3_popover = Some((id, index, at));
+                        app.ui.t3_settings_open = false;
+                        app.ui.t3_origin_open = false;
+                    }
+                    if ty == "perspective" {
+                        app.ui.persp_popover = Some((id, index, at));
+                    }
                 }
                 ui.close();
             }
@@ -68,16 +73,23 @@ pub(super) fn effects(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[Node
             }
             let w = ui.available_width() - 60.0;
             let resp = widgets::dropdown(ui, tr(e.label()), w, None);
-            if matches!(e.kind, EffectKind::Transform3d(_)) {
-                // Figma's 3D transform: the dropdown opens the popover (the preview and the
-                // fields), not the type list.
+            if matches!(e.kind, EffectKind::Transform3d(_) | EffectKind::Perspective(_)) {
+                // Figma's 3D transform and Perspective: the dropdown opens the effect's popover
+                // (the preview and the fields), not the type list.
                 if resp.clicked()
                     && let Some(first) = ids.first()
                 {
-                    app.ui.t3_popover = match app.ui.t3_popover {
-                        Some((open_id, open_i, _)) if open_id == *first && open_i == i => None,
-                        _ => Some((*first, i, resp.rect)),
-                    };
+                    if matches!(e.kind, EffectKind::Perspective(_)) {
+                        app.ui.persp_popover = match app.ui.persp_popover {
+                            Some((open_id, open_i, _)) if open_id == *first && open_i == i => None,
+                            _ => Some((*first, i, resp.rect)),
+                        };
+                    } else {
+                        app.ui.t3_popover = match app.ui.t3_popover {
+                            Some((open_id, open_i, _)) if open_id == *first && open_i == i => None,
+                            _ => Some((*first, i, resp.rect)),
+                        };
+                    }
                 }
             } else {
                 menu_popup(&resp).show(|ui| {

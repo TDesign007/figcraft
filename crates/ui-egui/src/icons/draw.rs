@@ -623,6 +623,14 @@ fn draw(p: &P, icon: Icon) {
                 p.line(8.0 + r0 * a.cos(), 8.0 + r0 * a.sin(), 8.0 + r1 * a.cos(), 8.0 + r1 * a.sin());
             }
         }
+        Perspective => {
+            // A ground plane receding to the horizon: the trapezoid, a transverse grid line
+            // part-way up it, and the two longitudinal lines converging on the far edge.
+            p.poly(&[(5.5, 4.5), (10.5, 4.5), (13.5, 12.5), (2.5, 12.5)], true);
+            p.line(4.0, 8.5, 12.0, 8.5);
+            p.line(5.75, 12.5, 7.5, 4.5);
+            p.line(10.25, 12.5, 8.5, 4.5);
+        }
         Styles => {
             for (x, y) in [(5.0, 5.0), (11.0, 5.0), (5.0, 11.0), (11.0, 11.0)] {
                 p.dot(x, y, 2.2);
