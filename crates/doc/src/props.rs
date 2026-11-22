@@ -1405,7 +1405,8 @@ impl LayoutGrid {
         Self { kind: GridKind::Columns, count: 5, gutter: 20.0, size: 0.0, ..Self::default() }
     }
     pub fn rows() -> Self {
-        Self { kind: GridKind::Rows, count: 5, gutter: 20.0, size: 0.0, color: Color::new(0.0, 0.4, 1.0, 0.1), ..Self::default() }
+        // The reference's default colour is red at 10% for every type, rows included.
+        Self { kind: GridKind::Rows, count: 5, gutter: 20.0, size: 0.0, ..Self::default() }
     }
 }
 
