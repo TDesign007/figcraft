@@ -77,16 +77,17 @@ fn the_slider_scrubs_the_distance_in_one_undo_step() {
     let track_min = slider.min.x + 10.0;
     let track_max = slider.max.x - 32.0;
     let at = |m: f32| Pos2::new(track_min + m * (track_max - track_min), slider.center().y);
-    // Pressing the track's left third and dragging right scrubs toward the far end (a larger
-    // distance than the default mid-track camera).
+    // Pressing the track's left half (the far side) and dragging right scrubs toward the near
+    // end — the reference's way round: rightward pushes the camera into the scene, the distance
+    // drops below the default mid-track camera and the perspective reads strongest.
     let right = at(0.35);
     u.frame(vec![egui::Event::PointerMoved(right), press(right, true)]);
-    u.frame(vec![egui::Event::PointerMoved(right + egui::vec2(30.0, 0.0))]);
-    u.frame(vec![press(right + egui::vec2(30.0, 0.0), false)]);
+    u.frame(vec![egui::Event::PointerMoved(right + egui::vec2(45.0, 0.0))]);
+    u.frame(vec![press(right + egui::vec2(45.0, 0.0), false)]);
     u.frame(vec![]);
     let n = u.app.session.doc().unwrap().node(r).unwrap().clone();
     let figcraft_doc::EffectKind::Perspective(p) = &n.effects[0].kind else { panic!("no perspective") };
-    assert!(p.distance > 800.0, "the right side of the track scrubs the camera away: {}", p.distance);
+    assert!(p.distance < 800.0, "dragging right scrubs the camera nearer: {}", p.distance);
     // The gesture was one undo step.
     u.app.session.undo().unwrap();
     let n = u.app.session.doc().unwrap().node(r).unwrap().clone();
@@ -139,20 +140,25 @@ fn the_square_toggle_shows_the_vanishing_point_on_the_canvas() {
 
 #[test]
 fn the_slider_range_adapts_to_the_frame_size() {
-    // The reference's adaptive range: a safe nearest camera scales with the frame's diagonal,
-    // the far end is where the perspective barely reads.
+    // The reference's own ends: the nearest camera is half the frame's diagonal, the farthest a
+    // hundred of it (a 278 diagonal reads 139..27800 there).
     let diag = 300.0f64.hypot(200.0);
     let (near, far) = crate::panels::right::perspective::range(300.0, 200.0);
-    assert!((near - diag * 0.12).abs() < 0.1, "the nearest camera is a share of the diagonal: {near}");
-    assert!((far - diag * 50.0).abs() < 1.0, "the far end is the diagonal's multiple: {far}");
+    assert!((near - diag / 2.0).abs() < 0.1, "the nearest camera is half the diagonal: {near}");
+    assert!((far - diag * 100.0).abs() < 1.0, "the far end is a hundred diagonals: {far}");
     let (small_near, small_far) = crate::panels::right::perspective::range(40.0, 40.0);
     assert!(small_near < near && small_far < far, "a smaller frame reads a nearer range: {small_near} {small_far}");
-    // The slider maps logarithmically, so the default camera lands mid-track whatever the size.
-    for (w, h) in [(300.0, 200.0), (40.0, 40.0), (2000.0, 1500.0)] {
+    // The logarithmic mapping puts the default camera inside the track for ordinary frames; a
+    // huge frame's safe minimum exceeds it and clamps to the near end, as the reference's does.
+    for (w, h) in [(300.0, 200.0), (40.0, 40.0)] {
         let (min, max) = crate::panels::right::perspective::range(w, h);
-        let m = ((800.0f64.ln() - min.ln()) / (max.ln() - min.ln())).clamp(0.0, 1.0);
-        assert!(m > 0.15 && m < 0.85, "the default sits inside the track for {w}×{h}: {m}");
+        let m = ((max.ln() - 800.0f64.ln()) / (max.ln() - min.ln())).clamp(0.0, 1.0);
+        assert!(m > 0.1 && m < 0.9, "the default sits inside the track for {w}×{h}: {m}");
     }
+    let (min, max) = crate::panels::right::perspective::range(2000.0, 1500.0);
+    assert!(min > 800.0, "a huge frame's safe nearest camera is past the default: {min}");
+    let m = ((max.ln() - 800.0f64.ln()) / (max.ln() - min.ln())).clamp(0.0, 1.0);
+    assert!((m - 1.0).abs() < 1e-9, "the default clamps to the near end there: {m}");
 }
 
 #[test]

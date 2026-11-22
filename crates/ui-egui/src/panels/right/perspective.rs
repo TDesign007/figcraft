@@ -181,13 +181,14 @@ pub(crate) fn popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId, i: usiz
     }
 }
 
-/// The slider's adaptive range (the reference's): from a safe nearest camera — a share of the
-/// frame's diagonal, under which the perspective drowns the frame itself — to one where the
-/// perspective barely reads. Both keep the default camera reachable mid-track at any size.
+/// The slider's adaptive range, the reference's own ends: the nearest camera is half the frame's
+/// diagonal (under it the perspective drowns the frame itself), the farthest a hundred diagonals
+/// (where the perspective barely reads) — a 278-diagonal selection reads 139..27800, as the
+/// reference's track ends do.
 pub(crate) fn range(w: f64, h: f64) -> (f64, f64) {
     let diag = w.hypot(h).max(1.0);
-    let min = (diag * 0.12).max(1.0);
-    let max = (diag * 50.0).clamp(min * 10.0, 100_000.0);
+    let min = (diag / 2.0).max(1.0);
+    let max = (diag * 100.0).min(100_000.0);
     (min, max)
 }
 
@@ -213,13 +214,17 @@ fn distance_slider(
     let toggle_rect = Rect::from_center_size(pos2(well.max.x - 16.0, cy), Vec2::splat(16.0));
     let track = Rect::from_min_max(pos2(well.min.x + 10.0, cy - 1.5), pos2(toggle_rect.left() - 8.0, cy + 1.5));
     let painter = ui.painter().with_clip_rect(well);
-    // The knob's place: the distance mapped logarithmically over the range.
-    let mix = |d: f64| ((d.max(1.0).ln() - min.ln()) / (max.ln() - min.ln()).max(1e-9)).clamp(0.0, 1.0) as f32;
+    // The knob's place: the distance mapped logarithmically, the reference's way round — the
+    // track's left end is the far camera (the perspective barely reads, the layer looks normal),
+    // the right end the near one (the strongest), so a drag rightward pushes the camera into
+    // the scene.
+    let m = |d: f64| ((max.ln() - d.max(1.0).ln()) / (max.ln() - min.ln()).max(1e-9)).clamp(0.0, 1.0) as f32;
     let at = |m: f32| track.min.x + m * (track.max.x - track.min.x);
-    // The frustum fan: the camera's cone from the knob, opening onto the scene's side. A nearer
-    // camera pulls the knob (and its cone's apex) left, stretching the fan across the track.
-    let kx = at(mix(distance));
-    let fan_h = 9.0 + 5.0 * (1.0 - mix(distance));
+    // The frustum fan: the camera's cone, apex on the knob, opening toward the scene at the
+    // track's right end — vanishing at the far end (nothing dramatic to see) and filling the
+    // track at the near one, where the perspective reads strongest.
+    let kx = at(m(distance));
+    let fan_h = (track.max.x - kx) * m(distance);
     painter.add(egui::Shape::convex_polygon(
         vec![pos2(kx, cy), pos2(track.max.x, cy - fan_h), pos2(track.max.x, cy + fan_h)],
         t.icon_secondary.gamma_multiply(0.28),
@@ -252,7 +257,7 @@ fn distance_slider(
     let resp = ui.interact(track.expand(6.0), Id::unique("persp_track"), Sense::click_and_drag());
     let value = |px: f32| {
         let m = ((px - track.min.x) / (track.max.x - track.min.x).max(1.0)).clamp(0.0, 1.0) as f64;
-        (min.ln() + m * (max.ln() - min.ln())).exp()
+        (max.ln() - m * (max.ln() - min.ln())).exp()
     };
     let mut moved = None;
     let mut scrub = None;
