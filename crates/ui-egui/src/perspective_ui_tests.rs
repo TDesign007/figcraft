@@ -41,6 +41,17 @@ fn press(p: Pos2, pressed: bool) -> egui::Event {
     egui::Event::PointerButton { pos: p, button: egui::PointerButton::Primary, pressed, modifiers: egui::Modifiers::NONE }
 }
 
+/// The ink a menu label was painted with (the dimmed/lit distinction the gating tests read).
+fn menu_ink(shapes: &[Shape], text: &str) -> egui::Color32 {
+    shapes
+        .iter()
+        .find_map(|shape| match shape {
+            Shape::Text(t) if t.galley.text() == text => Some(t.fallback_color),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("{text} is in the menu"))
+}
+
 #[test]
 fn the_popover_opens_beside_the_row_with_the_preview_and_the_distance() {
     let (mut u, r) = rect_with_perspective(500.0);
@@ -165,7 +176,8 @@ fn the_row_dropdown_opens_the_popover_not_the_type_menu() {
 #[test]
 fn the_add_menu_opens_the_perspective_popover_in_the_same_click() {
     let mut s = Session::new();
-    let r = NodeId(s.execute("shape.rectangle", &json!({"x": 0.0, "y": 0.0, "width": 100.0, "height": 100.0})).unwrap()["id"].as_u64().unwrap());
+    // Perspective is a frame's camera: the + menu lights its entry up for a frame only.
+    let r = NodeId(s.execute("node.create", &json!({"type": "frame", "x": 0.0, "y": 0.0, "width": 300.0, "height": 200.0})).unwrap()["id"].as_u64().unwrap());
     s.execute("select.set", &json!({"ids": [r]})).unwrap();
     let mut u = Ui::new(s);
     let shapes = flat(&u.frame_output(vec![]).shapes);
@@ -175,10 +187,16 @@ fn the_add_menu_opens_the_perspective_popover_in_the_same_click() {
     u.button(at, true);
     u.button(at, false);
     u.frame(vec![]);
+    // Past the menu's Area fade-in, so the ink is the settled token colour.
+    for _ in 0..30 {
+        u.frame(vec![egui::Event::PointerMoved(Pos2::new(20.0, 20.0))]);
+    }
+    let shapes = flat(&u.frame_output(vec![]).shapes);
+    let tokens = crate::theme::Tokens::get(&u.ctx);
+    assert_eq!(menu_ink(&shapes, "Perspective"), tokens.text, "the entry is lit for a frame");
     // Picking Perspective adds the effect and opens its popover in the same interaction (the
     // press and release share a frame: the opening frame must not read that press as an
     // outside press and close the new popover).
-    let shapes = flat(&u.frame_output(vec![]).shapes);
     let at = crate::live_tests::text_center(&shapes, "Perspective");
     u.frame(vec![egui::Event::PointerMoved(at), press(at, true), press(at, false)]);
     u.frame(vec![]);
@@ -201,6 +219,65 @@ fn the_add_menu_opens_the_perspective_popover_in_the_same_click() {
     u.frame(vec![press(close, false)]);
     u.frame(vec![]);
     assert!(u.app.ui.persp_popover.is_none(), "the header's X closes the popover");
+}
+
+#[test]
+fn the_add_menu_dims_perspective_for_other_selections() {
+    // A rectangle is not a frame: Perspective's entry is dimmed and inert in the + menu.
+    let mut s = Session::new();
+    let r = NodeId(s.execute("shape.rectangle", &json!({"x": 0.0, "y": 0.0, "width": 100.0, "height": 100.0})).unwrap()["id"].as_u64().unwrap());
+    s.execute("select.set", &json!({"ids": [r]})).unwrap();
+    let mut u = Ui::new(s);
+    let shapes = flat(&u.frame_output(vec![]).shapes);
+    let header = crate::live_tests::text_center(&shapes, "Effects").y;
+    let panel = u.app.ui.right_panel_rect.expect("the Design panel draws");
+    let at = Pos2::new(panel.right() - 20.0, header);
+    u.button(at, true);
+    u.button(at, false);
+    u.frame(vec![]);
+    for _ in 0..30 {
+        u.frame(vec![egui::Event::PointerMoved(Pos2::new(20.0, 20.0))]);
+    }
+    let shapes = flat(&u.frame_output(vec![]).shapes);
+    let tokens = crate::theme::Tokens::get(&u.ctx);
+    assert_eq!(menu_ink(&shapes, "Perspective"), tokens.menu_dim, "the entry is dimmed for a rectangle");
+    assert_eq!(menu_ink(&shapes, "Drop shadow"), tokens.text, "the other entries stay lit");
+    // Clicking the dimmed entry adds nothing and opens nothing.
+    let at = crate::live_tests::text_center(&shapes, "Perspective");
+    u.frame(vec![egui::Event::PointerMoved(at), press(at, true), press(at, false)]);
+    u.frame(vec![]);
+    let n = u.app.session.doc().unwrap().node(r).unwrap().clone();
+    assert!(n.effects.is_empty(), "the dimmed entry adds no effect");
+    assert!(u.app.ui.persp_popover.is_none(), "no popover for the dimmed entry");
+}
+
+#[test]
+fn the_type_menu_dims_perspective_for_other_selections() {
+    // The row type menu gates the same way: a rectangle's blur cannot turn into a Perspective.
+    let mut s = Session::new();
+    let r = NodeId(s.execute("shape.rectangle", &json!({"x": 0.0, "y": 0.0, "width": 100.0, "height": 100.0})).unwrap()["id"].as_u64().unwrap());
+    s.execute("effect.add", &json!({"ids": [r], "type": "layerBlur"})).unwrap();
+    s.execute("select.set", &json!({"ids": [r]})).unwrap();
+    let mut u = Ui::new(s);
+    u.ctx.data_mut(|d| d.insert_temp(egui::Id::unique(("fx_open", 0usize)), true));
+    u.frame(vec![]);
+    let shapes = flat(&u.frame_output(vec![]).shapes);
+    let label = crate::live_tests::text_center(&shapes, "Layer blur");
+    u.frame(vec![egui::Event::PointerMoved(label)]);
+    u.frame(vec![press(label, true)]);
+    u.frame(vec![press(label, false)]);
+    u.frame(vec![]);
+    for _ in 0..30 {
+        u.frame(vec![egui::Event::PointerMoved(Pos2::new(20.0, 20.0))]);
+    }
+    let shapes = flat(&u.frame_output(vec![]).shapes);
+    let tokens = crate::theme::Tokens::get(&u.ctx);
+    assert_eq!(menu_ink(&shapes, "Perspective"), tokens.menu_dim, "the type menu dims it too");
+    let at = crate::live_tests::text_center(&shapes, "Perspective");
+    u.frame(vec![egui::Event::PointerMoved(at), press(at, true), press(at, false)]);
+    u.frame(vec![]);
+    let n = u.app.session.doc().unwrap().node(r).unwrap().clone();
+    assert!(matches!(n.effects[0].kind, figcraft_doc::EffectKind::LayerBlur(_)), "the dimmed type entry changes nothing");
 }
 
 #[test]

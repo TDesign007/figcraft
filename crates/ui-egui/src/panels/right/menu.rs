@@ -82,6 +82,22 @@ pub fn menu_item(ui: &mut Ui, label: &str, shortcut: &str) -> bool {
     menu_row(ui, label, shortcut, 0.0, |_, _, _| {}).clicked()
 }
 
+/// [`menu_item`], dimmed and inert while `enabled` is false: the dim ink, no hover highlight, an
+/// accessibility-disabled row that takes no click (the reference's + menu, where the Perspective
+/// entry only lights up for a frame). Returns whether it was clicked while enabled.
+pub fn menu_item_enabled(ui: &mut Ui, label: &str, shortcut: &str, enabled: bool) -> bool {
+    if enabled {
+        return menu_item(ui, label, shortcut);
+    }
+    let t = Tokens::get(ui.ctx());
+    let text = ui.painter().layout_no_wrap(label.to_owned(), regular(11.5), Color32::PLACEHOLDER);
+    let w = ui.available_width().max(menu_row_width(text.size().x, 0.0).ceil());
+    let (r, resp) = ui.allocate_exact_size(vec2(w, 26.0), Sense::hover());
+    a11y::disabled(&resp);
+    ui.painter().galley(pos2(r.min.x + MENU_PAD, r.center().y - text.size().y / 2.0), text, t.menu_dim);
+    false
+}
+
 /// A menu row with art drawn into it after the label (`art(painter, row rect, text colour)`),
 /// taking `art_w` from the row's right edge.
 pub fn menu_item_with(ui: &mut Ui, label: &str, shortcut: &str, art_w: f32, art: impl FnOnce(&egui::Painter, Rect, Color32)) -> bool {

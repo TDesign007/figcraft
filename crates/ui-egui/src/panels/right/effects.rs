@@ -1,4 +1,4 @@
-use super::menu::{add_menu_popup, context_popup, menu_check, menu_item, menu_popup, row, row_context_menu, row_rect, row_target};
+use super::menu::{add_menu_popup, context_popup, menu_check, menu_item, menu_item_enabled, menu_popup, row, row_context_menu, row_rect, row_target};
 use super::{
     Blur, BlurType, Document, Effect, EffectKind, FieldEdit, FigApp, Glass, GridAlign, GridKind, Icon, Id, LayoutGrid, Lead, ListDrag,
     MAX_BLUR_RADIUS, NodeId, Noise, NoiseMode, Paint, Perspective, Sense, Shadow, StyleSlot, Texture, Transform3d, Ui, VariableType, common, icons, json, move_flags,
@@ -17,8 +17,11 @@ pub(super) fn effects(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[Node
     if clicked == Some(0) {
         style_picker::open(app, ui, &ids, StyleSlot::Effect);
     }
-    // The + lists the effect types (the target app's add menu). Picking 3D transform adds the
-    // effect and opens its popover at once, anchored at the button that added it.
+    // The + lists the effect types (the target app's add menu). Perspective is a frame's camera:
+    // the entry only lights up for a frame-like selection, dimmed and inert for any other. A
+    // picked 3D transform (or a lit Perspective) opens its popover at once, anchored at the
+    // button that added it.
+    let frames = crate::selection_cache::every(doc, &ids, |n| n.kind.is_frame_like());
     if let Some(add) = buttons.get(1) {
         // An empty section's header is a + too: its click (the button's response does not see it)
         // toggles the same menu.
@@ -27,7 +30,7 @@ pub(super) fn effects(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[Node
         add_menu_popup(add, toggle).show(|ui| {
             let mut picked = None;
             for (label, ty) in Effect::TYPES {
-                if menu_item(ui, tr(label), "") {
+                if menu_item_enabled(ui, tr(label), "", ty != "perspective" || frames) {
                     picked = Some(ty);
                 }
             }
@@ -92,9 +95,11 @@ pub(super) fn effects(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[Node
                     }
                 }
             } else {
+                // The type menu: Perspective joins it dimmed for a non-frame selection, like the
+                // + menu (the camera is meaningless on other layers).
                 menu_popup(&resp).show(|ui| {
                     for (l, ty) in Effect::TYPES {
-                        if menu_item(ui, tr(l), "")
+                        if menu_item_enabled(ui, tr(l), "", ty != "perspective" || frames)
                             && let Some(ne) = Effect::of_type(ty)
                         {
                             app.run("effect.set", json!({"ids": ids, "index": i, "effect": ne}));
