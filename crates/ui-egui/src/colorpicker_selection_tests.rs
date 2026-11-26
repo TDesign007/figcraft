@@ -155,7 +155,7 @@ fn the_picker_uses_the_fitted_sidebar_edge() {
 
 #[test]
 fn moved_page_effect_and_text_range_swatches_still_toggle_the_picker_closed() {
-    use egui::{Id, Pos2};
+    use egui::Pos2;
     for kind in ["page", "effect", "text"] {
         let (mut u, a, _) = two();
         let target = match kind {
@@ -165,7 +165,8 @@ fn moved_page_effect_and_text_range_swatches_still_toggle_the_picker_closed() {
             }
             "effect" => {
                 u.app.session.execute("effect.add", &json!({"id":a,"type":"dropShadow"})).unwrap();
-                u.ctx.data_mut(|d| d.insert_temp(Id::unique(("fx_open", 0usize)), true));
+                // The shadow's swatch lives in its floating panel, beside the row.
+                u.app.ui.shadow_popover = Some((a, 0, egui::Rect::from_min_size(Pos2::new(900.0, 320.0), egui::vec2(150.0, 30.0))));
                 PickerTarget::Effect { ids: vec![a], index: 0, secondary: false }
             }
             _ => {

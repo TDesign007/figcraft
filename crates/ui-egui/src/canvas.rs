@@ -501,6 +501,9 @@ mod outline_tests;
 mod panel_nodes_tests;
 
 #[cfg(test)]
+mod bg_blur_handle_tests;
+
+#[cfg(test)]
 mod selection_cache_tests;
 
 #[cfg(test)]

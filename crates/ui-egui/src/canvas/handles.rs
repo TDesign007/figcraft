@@ -249,7 +249,8 @@ fn gradient_target(app: &FigApp) -> Option<(NodeId, bool, usize, figcraft_color:
 }
 
 /// The progressive blur being edited: a single selected layer's first visible progressive blur
-/// whose settings are open in the Design panel (layer index, effect).
+/// whose settings are open in the Design panel (layer index, effect) — the row's own fields, or
+/// the Layer/Background blur popover on that effect.
 fn blur_target(app: &FigApp, ctx: &egui::Context) -> Option<(NodeId, usize, Effect)> {
     if app.ui.right_tab != RightTab::Design {
         return None;
@@ -257,8 +258,15 @@ fn blur_target(app: &FigApp, ctx: &egui::Context) -> Option<(NodeId, usize, Effe
     let sel = app.session.selection();
     let [id] = sel.as_slice() else { return None };
     let n = app.session.doc().ok()?.node(*id)?;
+    let in_popover = |i: usize| {
+        [app.ui.bg_blur_popover, app.ui.layer_blur_popover].into_iter().flatten().any(|(pop_id, pop_i, _)| pop_id == *id && pop_i == i)
+    };
     let (i, e) =
-        n.effects.iter().enumerate().find(|(i, e)| e.visible && e.blur().is_some_and(Blur::is_progressive) && crate::right::effect_open(ctx, *i))?;
+        n.effects.iter().enumerate().find(|(i, e)| {
+            e.visible
+                && e.blur().is_some_and(Blur::is_progressive)
+                && (crate::right::effect_open(ctx, *i) || in_popover(*i))
+        })?;
     Some((*id, i, e.clone()))
 }
 
@@ -266,6 +274,20 @@ fn blur_target(app: &FigApp, ctx: &egui::Context) -> Option<(NodeId, usize, Effe
 fn blur_points(app: &FigApp, id: NodeId, e: &Effect) -> Option<[Pos2; 2]> {
     let b = e.blur()?.sanitized();
     Some([unit_to_screen(app, id, b.start)?, unit_to_screen(app, id, b.end)?])
+}
+
+/// The knobs of effect `i`'s progressive ramp on screen, as press areas (empty unless it is a
+/// visible progressive blur): the popover holds them, so pressing one drags it instead of
+/// closing the popover as an outside press.
+pub(crate) fn blur_knob_rects(app: &FigApp, id: NodeId, i: usize) -> Vec<Rect> {
+    let Some(e) = app.session.doc().ok().and_then(|d| d.node(id)).and_then(|n| n.effects.get(i)).cloned() else {
+        return Vec::new();
+    };
+    if !e.visible || !e.blur().is_some_and(Blur::is_progressive) {
+        return Vec::new();
+    }
+    let Some([a, b]) = blur_points(app, id, &e) else { return Vec::new() };
+    [a, b].iter().map(|p| Rect::from_center_size(*p, vec2(16.0, 16.0))).collect()
 }
 
 /// Where `p` projects onto segment a→b: (t in 0..1, distance in points).
@@ -501,13 +523,14 @@ pub fn draw(app: &mut FigApp, painter: &egui::Painter) {
     }
     if let Some((id, _, e)) = blur_target(app, painter.ctx()) {
         let Some([a, b]) = blur_points(app, id, &e) else { return };
-        painter.line_segment([a, b], Stroke::new(2.0, Color32::WHITE));
-        painter.line_segment([a, b], Stroke::new(1.0, Color32::from_black_alpha(120)));
-        // The start is hollow (least blur), the end filled (most blur by default).
-        painter.circle_filled(a, 5.0, Color32::WHITE);
-        painter.circle_stroke(a, 5.0, Stroke::new(1.5, crate::theme::canvas_accent(painter.ctx())));
-        painter.circle_filled(b, 5.0, crate::theme::canvas_accent(painter.ctx()));
-        painter.circle_stroke(b, 5.0, Stroke::new(1.5, Color32::WHITE));
+        // The reference's line: a hairline white core with a thin dark halo. Both ends are the same
+        // small white knob (one is the start of the ramp, the other its end).
+        painter.line_segment([a, b], Stroke::new(2.0, Color32::from_black_alpha(120)));
+        painter.line_segment([a, b], Stroke::new(1.0, Color32::WHITE));
+        for p in [a, b] {
+            painter.circle_filled(p, 3.5, Color32::WHITE);
+            painter.circle_stroke(p, 3.5, Stroke::new(0.75, Color32::from_black_alpha(50)));
+        }
         return;
     }
     if let Some((id, _, _, img, r)) = crop_target(app) {

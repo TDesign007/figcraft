@@ -220,7 +220,21 @@ pub enum BindEvent {
 /// A number field `width` wide. `value` None shows "Mixed". `suffix` (e.g. "%" or "°") is shown
 /// after the number. Typing supports simple math (`10+5`, `*2`).
 pub fn number_field(ui: &mut Ui, id: Id, lead: Lead, value: Option<f64>, suffix: &str, width: f32, step: f64) -> Option<FieldEdit> {
-    number_field_mixed(ui, id, lead, value, suffix, width, step)?.settled()
+    number_field_sized(ui, id, lead, value, suffix, width, step, FIELD_H)
+}
+
+/// [`number_field`] `height` points tall, for the taller fields in effects popovers.
+pub fn number_field_sized(
+    ui: &mut Ui,
+    id: Id,
+    lead: Lead,
+    value: Option<f64>,
+    suffix: &str,
+    width: f32,
+    step: f64,
+    height: f32,
+) -> Option<FieldEdit> {
+    number_field_impl(ui, id, lead, value, suffix, width, step, height, None, Empty::Text(tr("Mixed"))).0?.settled()
 }
 
 /// Ask number field `id` to open for typing on its next frame, its text selected (a tool that
@@ -248,7 +262,7 @@ pub fn number_field_mixed(ui: &mut Ui, id: Id, lead: Lead, value: Option<f64>, s
 /// [`number_field`] that shows `empty` (dim) for no value instead of "Mixed" (e.g. "Auto"): there
 /// is no value to edit relative to, so `+4` is 4.
 pub fn number_field_or(ui: &mut Ui, id: Id, value: Option<f64>, empty: &str, width: f32, step: f64) -> Option<FieldEdit> {
-    number_field_impl(ui, id, Lead::None, value, "", width, step, None, Empty::Text(empty)).0?.settled()
+    number_field_impl(ui, id, Lead::None, value, "", width, step, FIELD_H, None, Empty::Text(empty)).0?.settled()
 }
 
 /// [`number_field`] that can bind a variable: `binding` None = not bindable, `Some(None)` = shows
@@ -266,7 +280,7 @@ pub fn number_field_bindable(
     binding: Option<Option<&str>>,
     empty: Empty<'_>,
 ) -> (Option<Edit>, Option<BindEvent>) {
-    number_field_impl(ui, id, lead, value, suffix, width, step, binding, empty)
+    number_field_impl(ui, id, lead, value, suffix, width, step, FIELD_H, binding, empty)
 }
 
 /// A save admitted for another document cannot make this reused field commit its cached draft.
@@ -300,12 +314,13 @@ fn number_field_impl(
     suffix: &str,
     width: f32,
     step: f64,
+    height: f32,
     binding: Option<Option<&str>>,
     empty: Empty<'_>,
 ) -> (Option<Edit>, Option<BindEvent>) {
     cancel_retargeted_field_save(ui, id);
     let t = Tokens::get(ui.ctx());
-    let (rect, _) = ui.allocate_exact_size(vec2(width, FIELD_H), Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
     if let Some(Some(name)) = binding {
         return (None, bound_field(ui, id, lead, rect, name));
     }
@@ -315,7 +330,7 @@ fn number_field_impl(
         Lead::Text(s) => text_lead_width(ui, s, width),
         Lead::Icon(..) => 24.0,
     };
-    let lead_rect = Rect::from_min_size(rect.min, vec2(lead_w, FIELD_H));
+    let lead_rect = Rect::from_min_size(rect.min, vec2(lead_w, height));
     let edit_rect = Rect::from_min_max(pos2(rect.min.x + lead_w, rect.min.y), rect.max);
     let editing_id = id.with("editing");
     let mut editing: Option<String> = ui.data(|d| d.get_temp(editing_id));

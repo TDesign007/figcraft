@@ -49,20 +49,6 @@ fn the_perspective_row_shows_its_distance() {
 }
 
 #[test]
-fn the_type_menu_lists_the_new_effects() {
-    let (mut u, _r) = rect_with_effect(&json!({"type": "layerBlur"}));
-    let shapes = flat(&u.frame_output(vec![]).shapes);
-    let label = crate::live_tests::text_center(&shapes, "Layer blur");
-    let at = Pos2::new(label.x, label.y);
-    u.frame(vec![egui::Event::PointerMoved(at)]);
-    u.frame(vec![egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: true, modifiers: egui::Modifiers::NONE }]);
-    u.frame(vec![egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: false, modifiers: egui::Modifiers::NONE }]);
-    let shapes: Vec<Shape> = flat(&u.frame_output(vec![]).shapes);
-    assert!(has_text(&shapes, "3D transform"), "the menu lists the 3D transform");
-    assert!(has_text(&shapes, "Perspective"), "the menu lists the Perspective");
-}
-
-#[test]
 fn the_popover_opens_beside_the_row_with_the_preview_and_the_fields() {
     let (mut u, r) = rect_with_effect(&json!({"type": "transform3d", "rotateX": -29.0, "rotateY": -45.0, "depth": 80.0}));
     u.app.ui.t3_popover = Some((r, 0, row_rect()));

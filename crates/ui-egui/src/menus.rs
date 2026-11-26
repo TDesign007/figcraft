@@ -699,6 +699,48 @@ pub fn popups(app: &mut FigApp, ctx: &egui::Context) {
         app.ui.persp_popover_shown = false;
         app.ui.persp_vp = false;
     }
+    if let Some((id, i, at)) = app.ui.glass_popover {
+        let tokens = crate::theme::Tokens::get(ctx);
+        crate::panels::right::glass::popover(app, ctx, id, i, at, &tokens);
+    } else {
+        app.ui.glass_popover_shown = false;
+    }
+    if let Some((id, i, at)) = app.ui.texture_popover {
+        let tokens = crate::theme::Tokens::get(ctx);
+        crate::panels::right::texture::popover(app, ctx, id, i, at, &tokens);
+    } else {
+        app.ui.texture_popover_shown = false;
+    }
+    if let Some((id, i, at)) = app.ui.noise_popover {
+        let tokens = crate::theme::Tokens::get(ctx);
+        crate::panels::right::noise::popover(app, ctx, id, i, at, &tokens);
+    } else {
+        app.ui.noise_popover_shown = false;
+    }
+    if let Some((id, i, at)) = app.ui.bg_blur_popover {
+        let tokens = crate::theme::Tokens::get(ctx);
+        crate::panels::right::blur::popover(app, ctx, crate::panels::right::blur::Kind::Background, id, i, at, &tokens);
+    } else {
+        app.ui.bg_blur_popover_shown = false;
+    }
+    if let Some((id, i, at)) = app.ui.layer_blur_popover {
+        let tokens = crate::theme::Tokens::get(ctx);
+        crate::panels::right::blur::popover(app, ctx, crate::panels::right::blur::Kind::Layer, id, i, at, &tokens);
+    } else {
+        app.ui.layer_blur_popover_shown = false;
+    }
+    if let Some((id, i, at)) = app.ui.shadow_popover {
+        let tokens = crate::theme::Tokens::get(ctx);
+        crate::panels::right::shadow::popover(app, ctx, crate::panels::right::shadow::Kind::Drop, id, i, at, &tokens);
+    } else {
+        app.ui.shadow_popover_shown = false;
+    }
+    if let Some((id, i, at)) = app.ui.inner_shadow_popover {
+        let tokens = crate::theme::Tokens::get(ctx);
+        crate::panels::right::shadow::popover(app, ctx, crate::panels::right::shadow::Kind::Inner, id, i, at, &tokens);
+    } else {
+        app.ui.inner_shadow_popover_shown = false;
+    }
     // The layout grid's settings popover, while one is open (it edits the grid like the panel's
     // own fields do — the row's grid icon toggles it).
     if let Some((ids, i, at)) = app.ui.grid_popover.clone() {

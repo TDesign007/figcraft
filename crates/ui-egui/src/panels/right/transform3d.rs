@@ -100,6 +100,7 @@ pub(crate) fn popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId, i: usiz
                     ui.set_width(WIDTH - 20.0);
                     // One header row, as the target app's: the effect's mark and title, the
                     // layer's name as a badge, then the pivot picker, the settings and the close.
+                    let mut trigger_end = 0.0;
                     row(ui, 34.0, |ui| {
                         cube_icon(ui, t);
                         ui.add_space(6.0);
@@ -110,6 +111,10 @@ pub(crate) fn popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId, i: usiz
                         let title = ui.painter().layout_no_wrap(tr("3D transform").to_string(), regular(11.0), t.text);
                         let (title_rect, _) = ui.allocate_exact_size(title.size(), Sense::hover());
                         ui.painter().galley(title_rect.min, title, t.text);
+                        ui.add_space(4.0);
+                        let (chevron_rect, _) = ui.allocate_exact_size(vec2(12.0, 12.0), Sense::hover());
+                        icons::paint(ui.painter(), chevron_rect, Icon::Chevron, t.icon_secondary);
+                        trigger_end = chevron_rect.max.x;
                         ui.add_space(6.0);
                         // The badge only where it clears the pinned icons (the three take the
                         // right 90 points of the row); it elides to what is left.
@@ -118,10 +123,11 @@ pub(crate) fn popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId, i: usiz
                             name_pill(ui, t, &name, room.min(84.0));
                         }
                     });
+                    let hr = ui.min_rect();
+                    crate::panels::right::effects::header_switch(app, ui, t, &ids, i, &effect, hr, trigger_end, row_rect);
                     // The three icons pinned to the header's right edge (painted and hit-tested
                     // at fixed places, so a long name can never cover them): the pivot picker,
                     // the settings and the close.
-                    let hr = ui.min_rect();
                     let icon_at = |n: usize| {
                         let right = hr.max.x - 8.0 - 26.0 * (n as f32 + 1.0) - 6.0 * n as f32;
                         Rect::from_min_size(pos2(right, hr.center().y - 13.0), vec2(26.0, 26.0))

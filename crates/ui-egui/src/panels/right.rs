@@ -6,8 +6,8 @@ use egui::{Align2, Color32, CornerRadius, Id, Pos2, Rect, Sense, Stroke, Ui, pos
 use figcraft_color::{BlendMode, Paint, PaintKind};
 use figcraft_doc::{
     
-    Blur, BlurType, BoolOp, Brush, Document, Effect, EffectKind, ExportFormat, ExportSetting, Glass, GridAlign, GridKind, LayoutGrid,
-    MAX_BLUR_RADIUS, MaskType, Node, NodeId, NodeKind, Noise, NoiseMode, Shadow, StrokeAlign, StrokeCap, StrokeJoin, StrokeProps, Texture,
+    BoolOp, Brush, Document, Effect, EffectKind, ExportFormat, ExportSetting, GridAlign, GridKind, LayoutGrid,
+    MaskType, Node, NodeId, NodeKind, Noise, NoiseMode, StrokeAlign, StrokeCap, StrokeJoin, StrokeProps,
     VariableType, WidthPoint, WidthPreset, WidthProfile, Transform3d, Perspective,
 };
 use figcraft_engine::cmd::lists::{moved_index, removed_index};
@@ -22,8 +22,13 @@ use crate::theme::{Tokens, regular, semibold};
 use crate::widgets::{self, Edit, FIELD_H, FieldEdit, Lead, PAD};
 use crate::{FigApp, RightTab};
 
+pub(crate) mod blur;
 pub(crate) mod effects;
+pub(crate) mod glass;
+pub(crate) mod noise;
 pub(crate) mod perspective;
+pub(crate) mod shadow;
+pub(crate) mod texture;
 pub(crate) mod transform3d;
 mod inspect;
 mod menu;

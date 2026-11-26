@@ -1,4 +1,5 @@
 use super::{BlendMode, Color32, CornerRadius, FIELD_H, FigApp, Id, NodeId, PAD, Rect, Sense, Tokens, Ui, a11y, json, pos2, regular, tr, vec2};
+use crate::icons::{self, Icon};
 
 /// The smallest width a popup menu is measured in (see [`menu_popup`]).
 const MENU_MIN_W: f32 = 48.0;
@@ -82,26 +83,46 @@ pub fn menu_item(ui: &mut Ui, label: &str, shortcut: &str) -> bool {
     menu_row(ui, label, shortcut, 0.0, |_, _, _| {}).clicked()
 }
 
-/// [`menu_item`], dimmed and inert while `enabled` is false: the dim ink, no hover highlight, an
-/// accessibility-disabled row that takes no click (the reference's + menu, where the Perspective
-/// entry only lights up for a frame). Returns whether it was clicked while enabled.
-pub fn menu_item_enabled(ui: &mut Ui, label: &str, shortcut: &str, enabled: bool) -> bool {
-    if enabled {
-        return menu_item(ui, label, shortcut);
-    }
-    let t = Tokens::get(ui.ctx());
-    let text = ui.painter().layout_no_wrap(label.to_owned(), regular(11.5), Color32::PLACEHOLDER);
-    let w = ui.available_width().max(menu_row_width(text.size().x, 0.0).ceil());
-    let (r, resp) = ui.allocate_exact_size(vec2(w, 26.0), Sense::hover());
-    a11y::disabled(&resp);
-    ui.painter().galley(pos2(r.min.x + MENU_PAD, r.center().y - text.size().y / 2.0), text, t.menu_dim);
-    false
-}
-
 /// A menu row with art drawn into it after the label (`art(painter, row rect, text colour)`),
 /// taking `art_w` from the row's right edge.
 pub fn menu_item_with(ui: &mut Ui, label: &str, shortcut: &str, art_w: f32, art: impl FnOnce(&egui::Painter, Rect, Color32)) -> bool {
     menu_row(ui, label, shortcut, art_w, art).clicked()
+}
+
+/// Figma's selection blue for the effect type list (the brand accent is green).
+const TYPE_SELECTED: Color32 = Color32::from_rgb(0x0D, 0x99, 0xFF);
+
+/// A menu row led by a 16 pt glyph: the effect types' list, the one in use lit in Figma's blue.
+/// Dimmed and inert while `enabled` is false (the Perspective entry outside frames).
+pub fn menu_item_icon(ui: &mut Ui, icon: Icon, label: &str, enabled: bool, selected: bool) -> bool {
+    const LEAD: f32 = 23.0;
+    let t = Tokens::get(ui.ctx());
+    let text = ui.painter().layout_no_wrap(label.to_owned(), regular(11.5), Color32::PLACEHOLDER);
+    let w = ui.available_width().max(menu_row_width(LEAD + text.size().x, 0.0).ceil());
+    let (r, resp) = ui.allocate_exact_size(vec2(w, 26.0), Sense::click());
+    if enabled {
+        a11y::menu_item(&resp, label, "", Some(selected));
+    } else {
+        a11y::disabled(&resp);
+    }
+    let hovered = enabled && resp.hovered();
+    if selected {
+        ui.painter().rect_filled(r, CornerRadius::same(5), TYPE_SELECTED);
+    } else if hovered {
+        ui.painter().rect_filled(r, CornerRadius::same(5), t.menu_hover);
+    }
+    let ink = if !enabled {
+        t.menu_dim
+    } else if selected {
+        Color32::WHITE
+    } else if hovered {
+        t.menu_text
+    } else {
+        t.text
+    };
+    icons::paint(ui.painter(), Rect::from_center_size(pos2(r.min.x + MENU_PAD + 8.0, r.center().y), vec2(16.0, 16.0)), icon, ink);
+    ui.painter().galley(pos2(r.min.x + MENU_PAD + LEAD, r.center().y - text.size().y / 2.0), text, ink);
+    resp.clicked() && enabled
 }
 
 /// The width a menu row needs for a label `label_w` wide and, at its right end, a shortcut or

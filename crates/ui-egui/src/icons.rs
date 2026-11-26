@@ -122,6 +122,30 @@ icons! {
     Panels,
     Help,
     Dots,
+    /// A 3 × 3 dot grid: noise density.
+    DotsGrid,
+    /// A rounded tile with a dot gradient: noise opacity.
+    OpacityGrid,
+    /// A centre dot ringed by dots radiating outward: shadow spread.
+    Spread,
+    /// A square shaded along its inside top edge: inner shadow.
+    ShadowInner,
+    /// A square with its shadow falling below: drop shadow.
+    ShadowDrop,
+    /// A 5 × 5 dot matrix, densest at its middle: layer blur.
+    BlurLayer,
+    /// A rounded frame around a 3 × 3 dot grid: background blur.
+    BlurBackground,
+    /// A rounded frame of scattered speckles: noise.
+    Noise,
+    /// A grid of dots of varied size: texture.
+    Texture,
+    /// A circle with an inner crescent highlight: glass.
+    Glass,
+    /// Three stacked waves: shader.
+    Shader,
+    /// A wireframe cube: 3D transform.
+    Cube,
     Mask,
     TextAlignLeft,
     TextAlignCenter,

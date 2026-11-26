@@ -606,7 +606,7 @@ impl Default for Noise {
             mode: NoiseMode::Mono,
             size: 0.5,
             size_y: None,
-            density: 0.5,
+            density: 1.0,
             color: Color::new(0.0, 0.0, 0.0, 0.25),
             secondary: Color::new(1.0, 1.0, 1.0, 0.25),
             opacity: 0.25,
@@ -964,8 +964,8 @@ fn yes() -> bool {
 impl Effect {
     /// Effect types in the order the Design panel lists them: (label, type name).
     pub const TYPES: [(&str, &str); 9] = [
-        ("Drop shadow", "dropShadow"),
         ("Inner shadow", "innerShadow"),
+        ("Drop shadow", "dropShadow"),
         ("Layer blur", "layerBlur"),
         ("Background blur", "backgroundBlur"),
         ("Noise", "noise"),

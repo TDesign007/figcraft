@@ -134,6 +134,11 @@ impl P<'_> {
     fn dot(&self, x: f32, y: f32, r: f32) {
         self.painter.circle_filled(self.raw(x, y), r * self.s, self.color);
     }
+    /// A dot at reduced alpha (a dot matrix's far dots, noise's grain).
+    fn dot_a(&self, x: f32, y: f32, r: f32, a: f32) {
+        let soft = P { painter: self.painter, o: self.o, s: self.s, px: self.px, stroke: self.stroke, color: self.color.gamma_multiply(a) };
+        soft.dot(x, y, r);
+    }
     fn arc(&self, cx: f32, cy: f32, r: f32, a0: f32, a1: f32) {
         self.path(&arc_pts(cx, cy, r, a0, a1).collect::<Vec<_>>(), false);
     }
@@ -668,6 +673,126 @@ fn draw(p: &P, icon: Icon) {
         Dots => {
             for x in [3.5, 8.0, 12.5] {
                 p.dot(x, 8.0, 1.25);
+            }
+        }
+        DotsGrid => {
+            for y in [3.5, 8.0, 12.5] {
+                for x in [3.5, 8.0, 12.5] {
+                    p.dot(x, y, 1.05);
+                }
+            }
+        }
+        OpacityGrid => {
+            p.rect(2.0, 2.0, 14.0, 14.0, 2.0);
+            for (row, xs) in [(5.0, &[10.5][..]), (8.0, &[7.5, 10.5][..]), (11.0, &[4.5, 7.5, 10.5][..])] {
+                for x in xs {
+                    p.dot(*x, row, 0.85);
+                }
+            }
+        }
+        Spread => {
+            p.dot(8.0, 8.0, 0.85);
+            for k in 0..8 {
+                let a = TAU * k as f32 / 8.0;
+                p.dot(8.0 + 4.6 * a.cos(), 8.0 + 4.6 * a.sin(), 0.75);
+            }
+        }
+        ShadowInner => {
+            p.fill_soft(&[(3.4, 3.4), (12.6, 3.4), (12.6, 6.6), (3.4, 6.6)]);
+            p.rect(2.5, 2.5, 13.5, 13.5, 2.5);
+        }
+        ShadowDrop => {
+            p.fill_soft(&[(4.0, 12.0), (13.2, 12.0), (13.2, 13.4), (12.6, 14.0), (4.0, 14.0)]);
+            p.rect(2.5, 2.0, 12.5, 12.0, 2.5);
+        }
+        BlurLayer => {
+            for row in 0..5 {
+                for col in 0..5 {
+                    let far = (col as i32 - 2).abs().max((row as i32 - 2).abs());
+                    let (r, a) = match far {
+                        0 => (1.15, 1.0),
+                        1 => (0.95, 0.85),
+                        _ => (0.7, 0.6),
+                    };
+                    p.dot_a(2.8 + col as f32 * 2.6, 2.8 + row as f32 * 2.6, r, a);
+                }
+            }
+        }
+        BlurBackground => {
+            p.rect(2.0, 2.0, 14.0, 14.0, 3.0);
+            for row in 0..3 {
+                for col in 0..3 {
+                    p.dot(4.8 + col as f32 * 3.2, 4.8 + row as f32 * 3.2, 0.9);
+                }
+            }
+        }
+        Noise => {
+            p.rect(2.0, 2.0, 14.0, 14.0, 3.0);
+            for (x, y, r) in [
+                (4.6, 5.2, 0.55),
+                (6.8, 4.4, 0.8),
+                (9.2, 5.0, 0.5),
+                (11.2, 4.8, 0.85),
+                (4.4, 8.0, 0.9),
+                (7.0, 7.0, 0.6),
+                (9.6, 7.6, 0.55),
+                (11.6, 7.4, 0.8),
+                (5.2, 10.4, 0.6),
+                (7.8, 10.0, 0.9),
+                (10.4, 10.6, 0.55),
+                (11.8, 10.2, 0.7),
+                (6.2, 12.0, 0.5),
+                (9.0, 12.2, 0.6),
+            ] {
+                p.dot_a(x, y, r, 0.9);
+            }
+        }
+        Texture => {
+            for (x, y, r) in [
+                (3.6, 3.8, 0.65),
+                (6.4, 3.2, 0.5),
+                (9.2, 3.9, 0.9),
+                (12.2, 3.3, 0.55),
+                (3.2, 6.6, 0.5),
+                (5.9, 6.9, 1.0),
+                (8.8, 6.3, 0.6),
+                (11.6, 6.8, 0.75),
+                (4.0, 9.7, 0.85),
+                (6.8, 9.3, 0.55),
+                (9.6, 9.9, 1.0),
+                (12.4, 9.4, 0.5),
+                (3.4, 12.4, 0.55),
+                (6.2, 12.0, 0.75),
+                (9.0, 12.6, 0.5),
+                (11.8, 12.1, 0.65),
+            ] {
+                p.dot_a(x, y, r, 0.9);
+            }
+        }
+        Glass => {
+            p.circle(8.0, 8.0, 5.7);
+            // The inner highlight runs down the left and round the bottom, open at the right.
+            p.arc(8.0, 8.0, 3.7, 0.7, PI + 0.8);
+        }
+        Shader => {
+            for y in [4.2, 8.0, 11.8] {
+                let pts: Vec<(f32, f32)> = (0..=20)
+                    .map(|k| {
+                        let x = 2.0 + k as f32 * 0.6;
+                        (x, y + ((x - 2.0) * 0.95).sin() * 1.15)
+                    })
+                    .collect();
+                p.path(&pts, false);
+            }
+        }
+        Cube => {
+            // Figma's 3D mark: the front face solid, its depth receding as a dotted back edge.
+            p.poly(&[(5.2, 6.3), (12.8, 3.3), (12.8, 11.0), (5.2, 14.0)], true);
+            for (x, y) in [(2.6, 5.3), (4.0, 4.4), (5.8, 3.7), (7.8, 3.2)] {
+                p.dot(x, y, 0.7);
+            }
+            for y in [6.4, 8.5, 10.6, 12.7] {
+                p.dot(2.6, y, 0.7);
             }
         }
         Mask | Opacity => {

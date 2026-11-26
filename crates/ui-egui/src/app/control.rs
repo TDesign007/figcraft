@@ -126,6 +126,36 @@ impl FigApp {
             "vp": self.ui.persp_vp,
             "mainRect": self.ui.persp_popover_pop.as_ref().map(|p| [p.rect.min.x, p.rect.min.y, p.rect.max.x, p.rect.max.y]),
         });
+        state["glass"] = json!({
+            "open": self.ui.glass_popover.is_some(),
+            "mainRect": self.ui.glass_popover_pop.as_ref().map(|p| [p.rect.min.x, p.rect.min.y, p.rect.max.x, p.rect.max.y]),
+            "previewRect": self.ui.glass_preview_rect.map(|r| [r.min.x, r.min.y, r.max.x, r.max.y]),
+            "sliderRects": self.ui.glass_slider_rects.iter().map(|r| [r.min.x, r.min.y, r.max.x, r.max.y]).collect::<Vec<_>>(),
+        });
+        state["texture"] = json!({
+            "open": self.ui.texture_popover.is_some(),
+            "mainRect": self.ui.texture_popover_pop.as_ref().map(|p| [p.rect.min.x, p.rect.min.y, p.rect.max.x, p.rect.max.y]),
+        });
+        state["noise"] = json!({
+            "open": self.ui.noise_popover.is_some(),
+            "mainRect": self.ui.noise_popover_pop.as_ref().map(|p| [p.rect.min.x, p.rect.min.y, p.rect.max.x, p.rect.max.y]),
+        });
+        state["bgBlur"] = json!({
+            "open": self.ui.bg_blur_popover.is_some(),
+            "mainRect": self.ui.bg_blur_popover_pop.as_ref().map(|p| [p.rect.min.x, p.rect.min.y, p.rect.max.x, p.rect.max.y]),
+        });
+        state["layerBlur"] = json!({
+            "open": self.ui.layer_blur_popover.is_some(),
+            "mainRect": self.ui.layer_blur_popover_pop.as_ref().map(|p| [p.rect.min.x, p.rect.min.y, p.rect.max.x, p.rect.max.y]),
+        });
+        state["shadow"] = json!({
+            "open": self.ui.shadow_popover.is_some(),
+            "mainRect": self.ui.shadow_popover_pop.as_ref().map(|p| [p.rect.min.x, p.rect.min.y, p.rect.max.x, p.rect.max.y]),
+        });
+        state["innerShadow"] = json!({
+            "open": self.ui.inner_shadow_popover.is_some(),
+            "mainRect": self.ui.inner_shadow_popover_pop.as_ref().map(|p| [p.rect.min.x, p.rect.min.y, p.rect.max.x, p.rect.max.y]),
+        });
         state
     }
 }

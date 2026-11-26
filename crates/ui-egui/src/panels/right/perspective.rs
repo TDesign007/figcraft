@@ -101,6 +101,7 @@ pub(crate) fn popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId, i: usiz
         ui.set_width(WIDTH - 20.0);
         // One header row, like the 3D transform's: the effect's mark and title, the
         // frame's name as a badge, then the close.
+        let mut trigger_end = 0.0;
         row(ui, 34.0, |ui| {
             let (icon_r, _) = ui.allocate_exact_size(vec2(16.0, 16.0), Sense::hover());
             icons::paint(ui.painter(), icon_r, Icon::Perspective, t.icon_secondary);
@@ -110,6 +111,10 @@ pub(crate) fn popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId, i: usiz
             let title = ui.painter().layout_no_wrap(tr("Perspective").to_string(), regular(11.0), t.text);
             let (title_rect, _) = ui.allocate_exact_size(title.size(), Sense::hover());
             ui.painter().galley(title_rect.min, title, t.text);
+            ui.add_space(4.0);
+            let (chevron_rect, _) = ui.allocate_exact_size(vec2(12.0, 12.0), Sense::hover());
+            icons::paint(ui.painter(), chevron_rect, Icon::Chevron, t.icon_secondary);
+            trigger_end = chevron_rect.max.x;
             ui.add_space(6.0);
             // The badge only where it clears the pinned close (the right ~40 points);
             // it elides to what is left.
@@ -119,6 +124,7 @@ pub(crate) fn popover(app: &mut FigApp, ctx: &egui::Context, id: NodeId, i: usiz
             }
         });
         let hr = ui.min_rect();
+        crate::panels::right::effects::header_switch(app, ui, t, &ids, i, &effect, hr, trigger_end, row_rect);
         let close_rect = Rect::from_min_size(pos2(hr.max.x - 8.0 - 26.0, hr.center().y - 13.0), vec2(26.0, 26.0));
         let close = ui.interact(close_rect, Id::unique("persp_close"), Sense::click());
         crate::a11y::describe(&close, tr("Close"));

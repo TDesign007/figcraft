@@ -1,8 +1,11 @@
-use super::menu::{add_menu_popup, context_popup, menu_check, menu_item, menu_item_enabled, menu_popup, row, row_context_menu, row_rect, row_target};
+use super::menu::{
+    add_menu_popup, context_popup, menu_check, menu_item, menu_item_icon, menu_popup, row, row_context_menu, row_rect,
+    row_target,
+};
 use super::transform3d::label_at;
 use super::{
-    Blur, BlurType, CornerRadius, Document, Effect, EffectKind, FieldEdit, FigApp, Glass, GridAlign, GridKind, Icon, Id, LayoutGrid, Lead, ListDrag,
-    MAX_BLUR_RADIUS, NodeId, Noise, NoiseMode, Paint, Perspective, Rect, Sense, Shadow, StyleSlot, Texture, Tokens, Transform3d, Ui, VariableType,
+    CornerRadius, Document, Effect, EffectKind, FieldEdit, FigApp, GridAlign, GridKind, Icon, Id, LayoutGrid, Lead, ListDrag,
+    NodeId, Noise, NoiseMode, Paint, Perspective, Rect, Sense, StyleSlot, Tokens, Transform3d, Ui, VariableType,
     common, icons, json, move_flags, moved_index, pos2, remove_flags, removed_index, style_picker, tr, trf, trn, vec2, widgets,
 };
 use crate::property_rows::PropertyKind;
@@ -22,34 +25,20 @@ pub(super) fn effects(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[Node
     // the entry only lights up for a frame-like selection, dimmed and inert for any other. A
     // picked 3D transform (or a lit Perspective) opens its popover at once, anchored at the
     // button that added it.
-    let frames = crate::selection_cache::every(doc, &ids, |n| n.kind.is_frame_like());
     if let Some(add) = buttons.get(1) {
         // An empty section's header is a + too: its click (the button's response does not see it)
         // toggles the same menu.
         let toggle = add.clicked() || (empty && clicked == Some(1));
         let at = add.rect;
         add_menu_popup(add, toggle).show(|ui| {
-            let mut picked = None;
-            for (label, ty) in Effect::TYPES {
-                if menu_item_enabled(ui, tr(label), "", ty != "perspective" || frames) {
-                    picked = Some(ty);
-                }
-            }
-            if let Some(ty) = picked {
+            if let Some(ty) = type_menu(app, ui, &ids, None) {
                 let first = ids.first().copied();
                 let before = first.and_then(|id| app.session.doc().ok().and_then(|d| d.node(id).map(|n| n.effects.len())));
                 app.run("effect.add", json!({"ids": ids, "type": ty}));
                 if let (Some(id), Some(index)) = (first, before) {
-                    // The 3D transform and Perspective open their popovers in the same click
-                    // (Figma's add menu), anchored at the button that added them.
-                    if ty == "transform3d" {
-                        app.ui.t3_popover = Some((id, index, at));
-                        app.ui.t3_settings_open = false;
-                        app.ui.t3_origin_open = false;
-                    }
-                    if ty == "perspective" {
-                        app.ui.persp_popover = Some((id, index, at));
-                    }
+                    // A picked effect opens its popover in the same click (Figma's add menu),
+                    // anchored at the button that added it.
+                    open_panel(app, ty, id, index, at);
                 }
                 ui.close();
             }
@@ -67,47 +56,128 @@ pub(super) fn effects(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[Node
     let mut removed = None;
     let selected_row = crate::theme::Tokens::get(ui.ctx()).selected_row;
     for (i, e) in list.iter().enumerate().rev() {
-        let mut open = effect_open(ui.ctx(), i);
+        let is_glass = matches!(e.kind, EffectKind::Glass(_));
+        let is_texture = matches!(e.kind, EffectKind::Texture(_));
+        let is_noise = matches!(e.kind, EffectKind::Noise(_));
+        let blur_kind = crate::panels::right::blur::Kind::of(&e.kind);
+        let shadow_kind = crate::panels::right::shadow::Kind::of(&e.kind);
+        let shadow_open =
+            shadow_kind.is_some_and(|k| crate::panels::right::shadow::state(app, k).is_some_and(|(open_id, open_i, _)| Some(open_id) == ids.first().copied() && open_i == i));
+        let mut open = if shadow_kind.is_some() {
+            shadow_open
+        } else {
+            effect_open(ui.ctx(), i) && !is_glass && !is_texture && !is_noise && blur_kind.is_none()
+        };
         // A click on the row's background highlights it for Cmd/Ctrl+C (`property_rows`).
         let highlight = crate::property_rows::fill(app, PropertyKind::Effect, i, selected_row);
         let header = row_target(ui, 32.0, highlight, |ui| {
-            if icons::button(ui, Icon::Effects, 24.0, open, tr("Effect settings")).clicked() {
-                open = !open;
-                ui.data_mut(|d| d.insert_temp(Id::unique((FX_OPEN, i)), open));
+            if icons::button(ui, type_icon(type_id(&e.kind)), 24.0, open, tr("Effect settings")).clicked() {
+                if is_glass {
+                    if let Some(first) = ids.first() {
+                        app.ui.glass_popover = match app.ui.glass_popover {
+                            Some((open_id, open_i, _)) if open_id == *first && open_i == i => None,
+                            _ => Some((*first, i, ui.min_rect())),
+                        };
+                        app.ui.texture_popover = None;
+                        app.ui.noise_popover = None;
+                        app.ui.bg_blur_popover = None;
+                        app.ui.layer_blur_popover = None;
+                        app.ui.shadow_popover = None;
+                        app.ui.inner_shadow_popover = None;
+                    }
+                } else if is_texture {
+                    if let Some(first) = ids.first() {
+                        app.ui.texture_popover = match app.ui.texture_popover {
+                            Some((open_id, open_i, _)) if open_id == *first && open_i == i => None,
+                            _ => Some((*first, i, ui.min_rect())),
+                        };
+                        app.ui.glass_popover = None;
+                        app.ui.noise_popover = None;
+                        app.ui.bg_blur_popover = None;
+                        app.ui.layer_blur_popover = None;
+                        app.ui.shadow_popover = None;
+                        app.ui.inner_shadow_popover = None;
+                    }
+                } else if is_noise {
+                    if let Some(first) = ids.first() {
+                        app.ui.noise_popover = match app.ui.noise_popover {
+                            Some((open_id, open_i, _)) if open_id == *first && open_i == i => None,
+                            _ => Some((*first, i, ui.min_rect())),
+                        };
+                        app.ui.glass_popover = None;
+                        app.ui.texture_popover = None;
+                        app.ui.bg_blur_popover = None;
+                        app.ui.layer_blur_popover = None;
+                        app.ui.shadow_popover = None;
+                        app.ui.inner_shadow_popover = None;
+                    }
+                } else if let Some(kind) = shadow_kind {
+                    if let Some(first) = ids.first() {
+                        crate::panels::right::shadow::toggle(app, kind, *first, i, ui.min_rect());
+                    }
+                } else if let Some(kind) = blur_kind {
+                    if let Some(first) = ids.first() {
+                        crate::panels::right::blur::toggle(app, kind, *first, i, ui.min_rect());
+                    }
+                } else {
+                    open = !open;
+                    ui.data_mut(|d| d.insert_temp(Id::unique((FX_OPEN, i)), open));
+                }
             }
             let w = ui.available_width() - 60.0;
             let resp = widgets::dropdown(ui, tr(e.label()), w, None);
-            if matches!(e.kind, EffectKind::Transform3d(_) | EffectKind::Perspective(_)) {
-                // Figma's 3D transform and Perspective: the dropdown opens the effect's popover
-                // (the preview and the fields), not the type list.
-                if resp.clicked()
-                    && let Some(first) = ids.first()
-                {
-                    if matches!(e.kind, EffectKind::Perspective(_)) {
-                        app.ui.persp_popover = match app.ui.persp_popover {
-                            Some((open_id, open_i, _)) if open_id == *first && open_i == i => None,
-                            _ => Some((*first, i, resp.rect)),
-                        };
-                    } else {
-                        app.ui.t3_popover = match app.ui.t3_popover {
-                            Some((open_id, open_i, _)) if open_id == *first && open_i == i => None,
-                            _ => Some((*first, i, resp.rect)),
-                        };
-                    }
+            // Every effect's name opens its own settings panel (Figma's), not a type list.
+            if resp.clicked()
+                && let Some(first) = ids.first()
+            {
+                if matches!(e.kind, EffectKind::Glass(_)) {
+                    app.ui.glass_popover = match app.ui.glass_popover {
+                        Some((open_id, open_i, _)) if open_id == *first && open_i == i => None,
+                        _ => Some((*first, i, resp.rect)),
+                    };
+                    app.ui.texture_popover = None;
+                    app.ui.noise_popover = None;
+                    app.ui.bg_blur_popover = None;
+                    app.ui.layer_blur_popover = None;
+                    app.ui.shadow_popover = None;
+                    app.ui.inner_shadow_popover = None;
+                } else if matches!(e.kind, EffectKind::Texture(_)) {
+                    app.ui.texture_popover = match app.ui.texture_popover {
+                        Some((open_id, open_i, _)) if open_id == *first && open_i == i => None,
+                        _ => Some((*first, i, resp.rect)),
+                    };
+                    app.ui.glass_popover = None;
+                    app.ui.noise_popover = None;
+                    app.ui.bg_blur_popover = None;
+                    app.ui.layer_blur_popover = None;
+                    app.ui.shadow_popover = None;
+                    app.ui.inner_shadow_popover = None;
+                } else if matches!(e.kind, EffectKind::Noise(_)) {
+                    app.ui.noise_popover = match app.ui.noise_popover {
+                        Some((open_id, open_i, _)) if open_id == *first && open_i == i => None,
+                        _ => Some((*first, i, resp.rect)),
+                    };
+                    app.ui.glass_popover = None;
+                    app.ui.texture_popover = None;
+                    app.ui.bg_blur_popover = None;
+                    app.ui.layer_blur_popover = None;
+                    app.ui.shadow_popover = None;
+                    app.ui.inner_shadow_popover = None;
+                } else if let Some(kind) = shadow_kind {
+                    crate::panels::right::shadow::toggle(app, kind, *first, i, resp.rect);
+                } else if let Some(kind) = blur_kind {
+                    crate::panels::right::blur::toggle(app, kind, *first, i, resp.rect);
+                } else if matches!(e.kind, EffectKind::Perspective(_)) {
+                    app.ui.persp_popover = match app.ui.persp_popover {
+                        Some((open_id, open_i, _)) if open_id == *first && open_i == i => None,
+                        _ => Some((*first, i, resp.rect)),
+                    };
+                } else {
+                    app.ui.t3_popover = match app.ui.t3_popover {
+                        Some((open_id, open_i, _)) if open_id == *first && open_i == i => None,
+                        _ => Some((*first, i, resp.rect)),
+                    };
                 }
-            } else {
-                // The type menu: Perspective joins it dimmed for a non-frame selection, like the
-                // + menu (the camera is meaningless on other layers).
-                menu_popup(&resp).show(|ui| {
-                    for (l, ty) in Effect::TYPES {
-                        if menu_item_enabled(ui, tr(l), "", ty != "perspective" || frames)
-                            && let Some(ne) = Effect::of_type(ty)
-                        {
-                            app.run("effect.set", json!({"ids": ids, "index": i, "effect": ne}));
-                            ui.close();
-                        }
-                    }
-                });
             }
             let (toggle, remove) = widgets::tight_end(ui, |ui| {
                 (
@@ -168,17 +238,142 @@ pub(super) fn effects(app: &mut FigApp, ui: &mut Ui, doc: &Document, sel: &[Node
 /// Salt of the flags that keep effect rows' settings open.
 const FX_OPEN: &str = "fx_open";
 
+/// Close every effect's floating panel: they take turns, one up at a time.
+pub(crate) fn close_effect_popovers(app: &mut FigApp) {
+    app.ui.glass_popover = None;
+    app.ui.texture_popover = None;
+    app.ui.noise_popover = None;
+    app.ui.bg_blur_popover = None;
+    app.ui.layer_blur_popover = None;
+    app.ui.shadow_popover = None;
+    app.ui.inner_shadow_popover = None;
+}
+
+/// The mark an effect type's row shows in the type menu (Figma's).
+pub(crate) fn type_icon(ty: &str) -> Icon {
+    match ty {
+        "innerShadow" => Icon::ShadowInner,
+        "dropShadow" => Icon::ShadowDrop,
+        "layerBlur" => Icon::BlurLayer,
+        "backgroundBlur" => Icon::BlurBackground,
+        "noise" => Icon::Noise,
+        "texture" => Icon::Texture,
+        "glass" => Icon::Glass,
+        "shader" => Icon::Shader,
+        "transform3d" => Icon::Cube,
+        _ => Icon::Perspective,
+    }
+}
+
+/// The type ID of `kind` (the commands' names, as in [`Effect::TYPES`]).
+pub(crate) fn type_id(kind: &EffectKind) -> &'static str {
+    match kind {
+        EffectKind::InnerShadow(_) => "innerShadow",
+        EffectKind::DropShadow(_) => "dropShadow",
+        EffectKind::LayerBlur(_) => "layerBlur",
+        EffectKind::BackgroundBlur(_) => "backgroundBlur",
+        EffectKind::Noise(_) => "noise",
+        EffectKind::Texture(_) => "texture",
+        EffectKind::Glass(_) => "glass",
+        EffectKind::Transform3d(_) => "transform3d",
+        EffectKind::Perspective(_) => "perspective",
+    }
+}
+
+/// The effect types in Figma's order, each with its mark: the add menu, and a popover's switcher
+/// (`current` lights the type the effect has). Perspective waits for a frame-like selection.
+/// Returns the type picked.
+pub(crate) fn type_menu(app: &FigApp, ui: &mut Ui, ids: &[NodeId], current: Option<&EffectKind>) -> Option<&'static str> {
+    let frames = app.session.doc().ok().is_some_and(|doc| crate::selection_cache::every(doc, ids, |n| n.kind.is_frame_like()));
+    let mut picked = None;
+    for (label, ty) in Effect::TYPES {
+        let enabled = ty != "perspective" || frames;
+        let selected = current.is_some_and(|k| type_id(k) == ty);
+        if menu_item_icon(ui, type_icon(ty), tr(label), enabled, selected) {
+            picked = Some(ty);
+        }
+        // Figma's own grouping: shaders stand apart from the effects above, and the 3D
+        // transform and Perspective apart from those. Shaders are not implemented in this
+        // engine yet, so their row is shown dimmed and inert rather than faked.
+        if ty == "glass" {
+            ui.separator();
+            menu_item_icon(ui, Icon::Shader, tr("Shader"), false, false);
+            ui.separator();
+        }
+    }
+    picked
+}
+
+/// Open the panel of effect type `ty` for effect `index` on layer `id`, anchored at `at`; the
+/// other panels close first.
+pub(crate) fn open_panel(app: &mut FigApp, ty: &str, id: NodeId, index: usize, at: Rect) {
+    close_effect_popovers(app);
+    match ty {
+        "glass" => app.ui.glass_popover = Some((id, index, at)),
+        "texture" => app.ui.texture_popover = Some((id, index, at)),
+        "noise" => app.ui.noise_popover = Some((id, index, at)),
+        "dropShadow" => crate::panels::right::shadow::open(app, crate::panels::right::shadow::Kind::Drop, id, index, at),
+        "innerShadow" => crate::panels::right::shadow::open(app, crate::panels::right::shadow::Kind::Inner, id, index, at),
+        "layerBlur" => crate::panels::right::blur::open(app, crate::panels::right::blur::Kind::Layer, id, index, at),
+        "backgroundBlur" => crate::panels::right::blur::open(app, crate::panels::right::blur::Kind::Background, id, index, at),
+        "transform3d" => {
+            app.ui.t3_popover = Some((id, index, at));
+            app.ui.t3_settings_open = false;
+            app.ui.t3_origin_open = false;
+        }
+        "perspective" => app.ui.persp_popover = Some((id, index, at)),
+        _ => {}
+    }
+}
+
+/// The popover header's left side as a switcher (Figma's): a click on the mark, the title or the
+/// chevron lists the effect types with their marks, the one in use lit; another type replaces
+/// this effect in place and opens its panel. `trigger_end` is where the header's chevron ends.
+pub(crate) fn header_switch(
+    app: &mut FigApp,
+    ui: &mut Ui,
+    t: &Tokens,
+    ids: &[NodeId],
+    i: usize,
+    effect: &Effect,
+    header: Rect,
+    trigger_end: f32,
+    anchor: Rect,
+) {
+    let left = header.left();
+    let trigger = Rect::from_min_size(pos2(left + 2.0, header.center().y - 12.0), vec2((trigger_end + 6.0 - left).max(26.0), 24.0));
+    let resp = ui.interact(trigger, Id::unique(("fx_switch", ids[0], i, type_id(&effect.kind))), Sense::click());
+    crate::a11y::menu_button(&resp, tr(effect.label()), false);
+    if resp.hovered() {
+        // The header's own mark and title are already painted, so a translucent wash lifts the
+        // hit area without hiding them (the panel's hover token is an opaque surface colour).
+        let wash = if t.dark {
+            egui::Color32::from_white_alpha(18)
+        } else {
+            egui::Color32::from_black_alpha(12)
+        };
+        ui.painter().rect_filled(trigger, CornerRadius::same(5), wash);
+    }
+    menu_popup(&resp).show(|ui| {
+        if let Some(ty) = type_menu(app, ui, ids, Some(&effect.kind)) {
+            if type_id(&effect.kind) != ty {
+                let mut next = Effect::of_type(ty).expect("the type menu lists the known effects");
+                next.visible = effect.visible;
+                app.run("effect.set", json!({"ids": ids, "index": i, "effect": next}));
+                open_panel(app, ty, ids[0], i, anchor);
+            }
+            ui.close();
+        }
+    });
+}
+
 /// Whether effect `i`'s settings are open in the Design panel.
 pub(crate) fn effect_open(ctx: &egui::Context, i: usize) -> bool {
     ctx.data(|d| d.get_temp::<bool>(Id::unique((FX_OPEN, i)))).unwrap_or(false)
 }
 
-/// A number field of effect `i` that can be bound to a variable (`effects/<i>/<prop>`).
-fn fx_field(app: &mut FigApp, ui: &mut Ui, ids: &[NodeId], i: usize, prop: &str, lead: Lead, value: f64, width: f32) -> Option<FieldEdit> {
-    fx_field_in(app, ui, ids, i, prop, lead, Some(value), "", width)
-}
-
-/// [`fx_field`] showing `value` as given (a glass percentage) with `suffix` after it.
+/// A number field of effect `i` that can be bound to a variable (`effects/<i>/<prop>`), showing
+/// `value` as given (a glass percentage) with `suffix` after it.
 pub(super) fn fx_field_in(
     app: &mut FigApp,
     ui: &mut Ui,
@@ -226,68 +421,10 @@ fn effect_settings(app: &mut FigApp, ui: &mut Ui, ids: &[NodeId], i: usize, e: &
         set(app, e2, scrub);
     };
     match &e.kind {
-        EffectKind::DropShadow(s) | EffectKind::InnerShadow(s) => {
-            let inner = matches!(e.kind, EffectKind::InnerShadow(_));
-            let mk = |s2: Shadow| Effect { kind: if inner { EffectKind::InnerShadow(s2) } else { EffectKind::DropShadow(s2) }, visible: e.visible };
-            row(ui, 32.0, |ui| {
-                let ed = fx_field(app, ui, ids, i, "offsetX", Lead::Text("X"), s.offset.0, half);
-                edit(app, ed, &|v| mk(Shadow { offset: (v, s.offset.1), ..s.clone() }));
-                let ed = fx_field(app, ui, ids, i, "offsetY", Lead::Text("Y"), s.offset.1, half);
-                edit(app, ed, &|v| mk(Shadow { offset: (s.offset.0, v), ..s.clone() }));
-            });
-            row(ui, 32.0, |ui| {
-                let ed = fx_field(app, ui, ids, i, "radius", Lead::Text(tr("Blur")), s.radius, half);
-                edit(app, ed, &|v| mk(Shadow { radius: v.max(0.0), ..s.clone() }));
-                let ed = fx_field(app, ui, ids, i, "spread", Lead::Text(tr("Spread")), s.spread, half);
-                edit(app, ed, &|v| mk(Shadow { spread: v, ..s.clone() }));
-            });
-            // The colour: a bound variable's chip, else swatch, hex and alpha with a variable button.
-            let color_field = format!("effects/{i}/color");
-            row(ui, 32.0, |ui| {
-                crate::variable_ui::bindable(app, ui, ids, &color_field, VariableType::Color, ui.available_width(), |app, ui| {
-                    fx_color(app, ui, ids, i, e, false, &edit_color)
-                });
-            });
-            if !inner {
-                row(ui, 32.0, |ui| {
-                    if widgets::checkbox(ui, s.show_behind, tr("Show behind transparent areas")) {
-                        set(app, mk(Shadow { show_behind: !s.show_behind, ..s.clone() }), None);
-                    }
-                });
-            }
-        }
-        EffectKind::LayerBlur(b) | EffectKind::BackgroundBlur(b) => {
-            let with = |f: &dyn Fn(&mut Blur)| {
-                let mut e2 = e.clone();
-                if let Some(b2) = e2.blur_mut() {
-                    f(b2);
-                }
-                e2
-            };
-            row(ui, 32.0, |ui| {
-                let resp = widgets::dropdown(ui, tr(b.blur_type.label()), ui.available_width(), None);
-                menu_popup(&resp).show(|ui| {
-                    for t in BlurType::ALL {
-                        if menu_item(ui, tr(t.label()), "") {
-                            set(app, with(&|b2| b2.blur_type = t), None);
-                            ui.close();
-                        }
-                    }
-                });
-            });
-            row(ui, 32.0, |ui| {
-                if b.is_progressive() {
-                    // The ramp's start and end points are dragged on the canvas.
-                    let ed = fx_field(app, ui, ids, i, "startRadius", Lead::Text(tr("Start")), b.start_radius, half);
-                    edit(app, ed, &|v| with(&|b2| b2.start_radius = v.clamp(0.0, MAX_BLUR_RADIUS)));
-                    let ed = fx_field(app, ui, ids, i, "radius", Lead::Text(tr("End")), b.radius, half);
-                    edit(app, ed, &|v| with(&|b2| b2.radius = v.clamp(0.0, MAX_BLUR_RADIUS)));
-                } else {
-                    let ed = fx_field(app, ui, ids, i, "radius", Lead::Text(tr("Blur")), b.radius, ui.available_width());
-                    edit(app, ed, &|v| with(&|b2| b2.radius = v.clamp(0.0, MAX_BLUR_RADIUS)));
-                }
-            });
-        }
+        // The two shadows edit in their own floating panels (`right::shadow`), never inline.
+        EffectKind::DropShadow(_) | EffectKind::InnerShadow(_) => {}
+        // The two blurs edit in their own floating panels (`right::blur`), never inline.
+        EffectKind::LayerBlur(_) | EffectKind::BackgroundBlur(_) => {}
         EffectKind::Noise(nz) => {
             let with = |f: &dyn Fn(&mut Noise)| {
                 tweaked(e, |k| {
@@ -339,66 +476,10 @@ fn effect_settings(app: &mut FigApp, ui: &mut Ui, ids: &[NodeId], i: usize, e: &
                 }),
             }
         }
-        EffectKind::Texture(tx) => {
-            let with = |f: &dyn Fn(&mut Texture)| {
-                tweaked(e, |k| {
-                    if let EffectKind::Texture(t) = k {
-                        f(t);
-                    }
-                })
-            };
-            row(ui, 32.0, |ui| {
-                let ed = widgets::number_field(ui, Id::unique(("fx_ts", i)), Lead::Text(tr("Size")), Some(tx.size), "", half, 0.1);
-                edit(app, ed, &|v| {
-                    with(&|t| {
-                        t.size = v.clamp(0.01, 1000.0);
-                        t.size_y = None;
-                    })
-                });
-                let ed = widgets::number_field(ui, Id::unique(("fx_tr", i)), Lead::Text(tr("Radius")), Some(tx.radius), "", half, 1.0);
-                edit(app, ed, &|v| with(&|t| t.radius = v.max(0.0)));
-            });
-            row(ui, 32.0, |ui| {
-                if widgets::checkbox(ui, tx.clip_to_shape, tr("Clip to shape")) {
-                    set(app, with(&|t| t.clip_to_shape = !tx.clip_to_shape), None);
-                }
-            });
-        }
-        EffectKind::Glass(g) => {
-            let with = |f: &dyn Fn(&mut Glass)| {
-                tweaked(e, |k| {
-                    if let EffectKind::Glass(gl) = k {
-                        f(gl);
-                    }
-                })
-            };
-            // Each field takes a variable (`effects/<i>/<field>`), read as the field shows it:
-            // percentages for the 0–1 values, and the frost as `radius` (see `Glass::set_bound`).
-            let pct = |v: f64| Some((v * 100.0).round());
-            let unit = |v: f64| (v / 100.0).clamp(0.0, 1.0);
-            row(ui, 32.0, |ui| {
-                let ed = fx_field_in(app, ui, ids, i, "lightAngle", Lead::Text(tr("Light|glass")), Some(g.light_angle.round()), "°", half);
-                edit(app, ed, &|v| with(&|gl| gl.light_angle = v.clamp(-180.0, 180.0)));
-                let ed = fx_field_in(app, ui, ids, i, "lightIntensity", Lead::Text(tr("Intensity")), pct(g.light_intensity), "%", half);
-                edit(app, ed, &|v| with(&|gl| gl.light_intensity = unit(v)));
-            });
-            row(ui, 32.0, |ui| {
-                let ed = fx_field_in(app, ui, ids, i, "refraction", Lead::Text(tr("Refraction")), pct(g.refraction), "%", half);
-                edit(app, ed, &|v| with(&|gl| gl.refraction = unit(v)));
-                let ed = fx_field_in(app, ui, ids, i, "depth", Lead::Text(tr("Depth")), Some(g.depth), "", half);
-                edit(app, ed, &|v| with(&|gl| gl.depth = v.clamp(1.0, 1000.0)));
-            });
-            row(ui, 32.0, |ui| {
-                let ed = fx_field_in(app, ui, ids, i, "dispersion", Lead::Text(tr("Dispersion")), pct(g.dispersion), "%", half);
-                edit(app, ed, &|v| with(&|gl| gl.dispersion = unit(v)));
-                let ed = fx_field_in(app, ui, ids, i, "radius", Lead::Text(tr("Frost")), Some(g.sanitized().frost), "", half);
-                edit(app, ed, &|v| with(&|gl| gl.frost = v.clamp(0.0, Glass::MAX_FROST)));
-            });
-            row(ui, 32.0, |ui| {
-                let ed = fx_field_in(app, ui, ids, i, "splay", Lead::Text(tr("Splay")), pct(g.splay), "%", half);
-                edit(app, ed, &|v| with(&|gl| gl.splay = unit(v)));
-            });
-        }
+        // Texture settings live in their own popover (`texture::popover`), never under this row.
+        EffectKind::Texture(_) => {}
+        // Glass settings live in their own popover (`glass::popover`), never under this row.
+        EffectKind::Glass(_) => {}
         EffectKind::Transform3d(t) => {
             let with = |f: &dyn Fn(&mut Transform3d)| {
                 tweaked(e, |k| {

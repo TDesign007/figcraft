@@ -221,6 +221,21 @@ mod perf_tests;
 #[cfg(test)]
 mod perspective_ui_tests;
 #[cfg(test)]
+mod glass_ui_tests;
+#[cfg(test)]
+mod texture_ui_tests;
+#[cfg(test)]
+mod noise_ui_tests;
+#[cfg(test)]
+mod bg_blur_ui_tests;
+
+#[cfg(test)]
+mod layer_blur_ui_tests;
+#[cfg(test)]
+mod shadow_ui_tests;
+#[cfg(test)]
+mod effect_switch_ui_tests;
+#[cfg(test)]
 mod plugin_panel_tests;
 #[cfg(test)]
 mod plugin_save_ui_tests;
@@ -548,6 +563,54 @@ pub struct UiState {
     pub persp_preview_rect: Option<egui::Rect>,
     /// The distance slider's well rect, as drawn last frame.
     pub persp_slider_rect: Option<egui::Rect>,
+    /// The Glass popover: the layer and effect row it edits, and the row's rect. `None` when
+    /// closed.
+    pub glass_popover: Option<(NodeId, usize, egui::Rect)>,
+    /// The Glass popover has drawn at least once (its opening press is spared).
+    pub glass_popover_shown: bool,
+    /// The Glass popover's chrome, kept between frames.
+    pub glass_popover_pop: Option<crate::popover::Popover>,
+    /// The Glass preview and slider wells, as drawn last frame (tests, control-channel drives).
+    pub glass_preview_rect: Option<egui::Rect>,
+    pub glass_slider_rects: Vec<egui::Rect>,
+    /// The Texture popover: the layer and effect row it edits, and the row's rect. `None` when
+    /// closed.
+    pub texture_popover: Option<(NodeId, usize, egui::Rect)>,
+    /// The Texture popover has drawn at least once (its opening press is spared).
+    pub texture_popover_shown: bool,
+    /// The Texture popover's chrome, kept between frames.
+    pub texture_popover_pop: Option<crate::popover::Popover>,
+    /// The Noise popover: the layer and effect row it edits, and the row's rect. `None` when
+    /// closed.
+    pub noise_popover: Option<(NodeId, usize, egui::Rect)>,
+    /// The Noise popover has drawn at least once (its opening press is spared).
+    pub noise_popover_shown: bool,
+    /// The Noise popover's chrome, kept between frames.
+    pub noise_popover_pop: Option<crate::popover::Popover>,
+    /// The Background blur popover: the layer and effect row it edits, and the row's rect.
+    pub bg_blur_popover: Option<(NodeId, usize, egui::Rect)>,
+    /// The Background blur popover has drawn at least once (its opening press is spared).
+    pub bg_blur_popover_shown: bool,
+    /// The Background blur popover's chrome, kept between frames.
+    pub bg_blur_popover_pop: Option<crate::popover::Popover>,
+    /// The Layer blur popover: the layer and effect row it edits, and the row's rect.
+    pub layer_blur_popover: Option<(NodeId, usize, egui::Rect)>,
+    /// The Layer blur popover has drawn at least once (its opening press is spared).
+    pub layer_blur_popover_shown: bool,
+    /// The Layer blur popover's chrome, kept between frames.
+    pub layer_blur_popover_pop: Option<crate::popover::Popover>,
+    /// The Drop shadow popover: the layer and effect row it edits, and the row's rect.
+    pub shadow_popover: Option<(NodeId, usize, egui::Rect)>,
+    /// The Drop shadow popover has drawn at least once (its opening press is spared).
+    pub shadow_popover_shown: bool,
+    /// The Drop shadow popover's chrome, kept between frames.
+    pub shadow_popover_pop: Option<crate::popover::Popover>,
+    /// The Inner shadow popover: the layer and effect row it edits, and the row's rect.
+    pub inner_shadow_popover: Option<(NodeId, usize, egui::Rect)>,
+    /// The Inner shadow popover has drawn at least once (its opening press is spared).
+    pub inner_shadow_popover_shown: bool,
+    /// The Inner shadow popover's chrome, kept between frames.
+    pub inner_shadow_popover_pop: Option<crate::popover::Popover>,
     /// The layout grid's settings popover: the selection it edits, the grid row's index, and the
     /// row's grid-icon rect (it opens beside the row, on the canvas side, like the Perspective
     /// popover's). `None` when closed.
@@ -785,6 +848,29 @@ impl Default for UiState {
             persp_vp: false,
             persp_preview_rect: None,
             persp_slider_rect: None,
+            glass_popover: None,
+            glass_popover_shown: false,
+            glass_popover_pop: None,
+            glass_preview_rect: None,
+            glass_slider_rects: Vec::new(),
+            texture_popover: None,
+            texture_popover_shown: false,
+            texture_popover_pop: None,
+            noise_popover: None,
+            noise_popover_shown: false,
+            noise_popover_pop: None,
+            bg_blur_popover: None,
+            bg_blur_popover_shown: false,
+            bg_blur_popover_pop: None,
+            layer_blur_popover: None,
+            layer_blur_popover_shown: false,
+            layer_blur_popover_pop: None,
+            shadow_popover: None,
+            shadow_popover_shown: false,
+            shadow_popover_pop: None,
+            inner_shadow_popover: None,
+            inner_shadow_popover_shown: false,
+            inner_shadow_popover_pop: None,
             grid_popover: None,
             grid_popover_shown: false,
             grid_popover_pop: None,

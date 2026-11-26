@@ -258,35 +258,6 @@ fn the_add_menu_dims_perspective_for_other_selections() {
 }
 
 #[test]
-fn the_type_menu_dims_perspective_for_other_selections() {
-    // The row type menu gates the same way: a rectangle's blur cannot turn into a Perspective.
-    let mut s = Session::new();
-    let r = NodeId(s.execute("shape.rectangle", &json!({"x": 0.0, "y": 0.0, "width": 100.0, "height": 100.0})).unwrap()["id"].as_u64().unwrap());
-    s.execute("effect.add", &json!({"ids": [r], "type": "layerBlur"})).unwrap();
-    s.execute("select.set", &json!({"ids": [r]})).unwrap();
-    let mut u = Ui::new(s);
-    u.ctx.data_mut(|d| d.insert_temp(egui::Id::unique(("fx_open", 0usize)), true));
-    u.frame(vec![]);
-    let shapes = flat(&u.frame_output(vec![]).shapes);
-    let label = crate::live_tests::text_center(&shapes, "Layer blur");
-    u.frame(vec![egui::Event::PointerMoved(label)]);
-    u.frame(vec![press(label, true)]);
-    u.frame(vec![press(label, false)]);
-    u.frame(vec![]);
-    for _ in 0..30 {
-        u.frame(vec![egui::Event::PointerMoved(Pos2::new(20.0, 20.0))]);
-    }
-    let shapes = flat(&u.frame_output(vec![]).shapes);
-    let tokens = crate::theme::Tokens::get(&u.ctx);
-    assert_eq!(menu_ink(&shapes, "Perspective"), tokens.menu_dim, "the type menu dims it too");
-    let at = crate::live_tests::text_center(&shapes, "Perspective");
-    u.frame(vec![egui::Event::PointerMoved(at), press(at, true), press(at, false)]);
-    u.frame(vec![]);
-    let n = u.app.session.doc().unwrap().node(r).unwrap().clone();
-    assert!(matches!(n.effects[0].kind, figcraft_doc::EffectKind::LayerBlur(_)), "the dimmed type entry changes nothing");
-}
-
-#[test]
 fn the_popover_closes_with_what_it_edits() {
     let (mut u, r) = rect_with_perspective(600.0);
     open(&mut u, r);

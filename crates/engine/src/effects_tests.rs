@@ -95,7 +95,7 @@ fn scaling_scales_grain_and_glass() {
     let d = Glass::default();
     assert_eq!((nz.size, t.size, t.radius, g.depth, g.frost), (1.0, 1.0, 8.0, d.depth * 2.0, d.frost * 2.0));
     // Unitless values stay.
-    assert_eq!((g.refraction, nz.density), (d.refraction, 0.5));
+    assert_eq!((g.refraction, nz.density), (d.refraction, 1.0));
 }
 
 #[test]

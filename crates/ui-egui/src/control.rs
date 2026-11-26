@@ -1237,6 +1237,107 @@ fn ui_set_view(app: &mut FigApp, ctx: &Context, p: &Value) -> Result<(), String>
     if let Some(open) = p.get("perspVp").and_then(Value::as_bool) {
         app.ui.persp_vp = open;
     }
+    // The Glass effect popover, the same way: `{"glassPopover": {"id": 2, "index": 0}}`, null to
+    // close.
+    match p.get("glassPopover") {
+        Some(Value::Null) => {
+            app.ui.glass_popover = None;
+        }
+        Some(v) => {
+            let id = v.get("id").and_then(figcraft_engine::params::id_of).ok_or("`glassPopover.id` required")?;
+            let index = v.get("index").and_then(Value::as_u64).unwrap_or(0) as usize;
+            let panel_left = app.ui.right_panel_rect.map(|r| r.left()).unwrap_or(0.0);
+            let row = egui::Rect::from_min_size(egui::pos2(panel_left, 320.0), egui::vec2(150.0, 30.0));
+            app.ui.glass_popover = Some((id, index, row));
+        }
+        None => {}
+    }
+    // The Texture effect popover, the same way: `{"texturePopover": {"id": 2, "index": 0}}`, null
+    // to close.
+    match p.get("texturePopover") {
+        Some(Value::Null) => {
+            app.ui.texture_popover = None;
+        }
+        Some(v) => {
+            let id = v.get("id").and_then(figcraft_engine::params::id_of).ok_or("`texturePopover.id` required")?;
+            let index = v.get("index").and_then(Value::as_u64).unwrap_or(0) as usize;
+            let panel_left = app.ui.right_panel_rect.map(|r| r.left()).unwrap_or(0.0);
+            let row = egui::Rect::from_min_size(egui::pos2(panel_left, 320.0), egui::vec2(150.0, 30.0));
+            app.ui.texture_popover = Some((id, index, row));
+        }
+        None => {}
+    }
+    // The Noise effect popover, the same way: `{"noisePopover": {"id": 2, "index": 0}}`, null to
+    // close.
+    match p.get("noisePopover") {
+        Some(Value::Null) => {
+            app.ui.noise_popover = None;
+        }
+        Some(v) => {
+            let id = v.get("id").and_then(figcraft_engine::params::id_of).ok_or("`noisePopover.id` required")?;
+            let index = v.get("index").and_then(Value::as_u64).unwrap_or(0) as usize;
+            let panel_left = app.ui.right_panel_rect.map(|r| r.left()).unwrap_or(0.0);
+            let row = egui::Rect::from_min_size(egui::pos2(panel_left, 320.0), egui::vec2(150.0, 30.0));
+            app.ui.noise_popover = Some((id, index, row));
+        }
+        None => {}
+    }
+    // The Background blur effect popover, the same way.
+    match p.get("bgBlurPopover") {
+        Some(Value::Null) => {
+            app.ui.bg_blur_popover = None;
+        }
+        Some(v) => {
+            let id = v.get("id").and_then(figcraft_engine::params::id_of).ok_or("`bgBlurPopover.id` required")?;
+            let index = v.get("index").and_then(Value::as_u64).unwrap_or(0) as usize;
+            let panel_left = app.ui.right_panel_rect.map(|r| r.left()).unwrap_or(0.0);
+            let row = egui::Rect::from_min_size(egui::pos2(panel_left, 320.0), egui::vec2(150.0, 30.0));
+            app.ui.bg_blur_popover = Some((id, index, row));
+        }
+        None => {}
+    }
+    // The Layer blur effect popover, the same way.
+    match p.get("layerBlurPopover") {
+        Some(Value::Null) => {
+            app.ui.layer_blur_popover = None;
+        }
+        Some(v) => {
+            let id = v.get("id").and_then(figcraft_engine::params::id_of).ok_or("`layerBlurPopover.id` required")?;
+            let index = v.get("index").and_then(Value::as_u64).unwrap_or(0) as usize;
+            let panel_left = app.ui.right_panel_rect.map(|r| r.left()).unwrap_or(0.0);
+            let row = egui::Rect::from_min_size(egui::pos2(panel_left, 320.0), egui::vec2(150.0, 30.0));
+            app.ui.layer_blur_popover = Some((id, index, row));
+        }
+        None => {}
+    }
+    // The Drop shadow effect popover, the same way.
+    match p.get("shadowPopover") {
+        Some(Value::Null) => {
+            app.ui.shadow_popover = None;
+        }
+        Some(v) => {
+            let id = v.get("id").and_then(figcraft_engine::params::id_of).ok_or("`shadowPopover.id` required")?;
+            let index = v.get("index").and_then(Value::as_u64).unwrap_or(0) as usize;
+            let panel_left = app.ui.right_panel_rect.map(|r| r.left()).unwrap_or(0.0);
+            let row = egui::Rect::from_min_size(egui::pos2(panel_left, 320.0), egui::vec2(150.0, 30.0));
+            app.ui.shadow_popover = Some((id, index, row));
+        }
+        None => {}
+    }
+    // The Inner shadow effect popover, the same way.
+    match p.get("innerShadowPopover") {
+        Some(Value::Null) => {
+            app.ui.inner_shadow_popover = None;
+        }
+        Some(v) => {
+            let id = v.get("id").and_then(figcraft_engine::params::id_of).ok_or("`innerShadowPopover.id` required")?;
+            let index = v.get("index").and_then(Value::as_u64).unwrap_or(0) as usize;
+            let panel_left = app.ui.right_panel_rect.map(|r| r.left()).unwrap_or(0.0);
+            let row = egui::Rect::from_min_size(egui::pos2(panel_left, 320.0), egui::vec2(150.0, 30.0));
+            app.ui.inner_shadow_popover = Some((id, index, row));
+        }
+        None => {}
+    }
     // The layout grid's settings popover, the same way: `{"gridPopover": {"index": 0}}`, null to
     // close. It edits the current selection's grid `index`.
     match p.get("gridPopover") {
